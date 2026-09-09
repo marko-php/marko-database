@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Seed;
 
+use Marko\Database\Config\Environment;
 use Marko\Database\Connection\TransactionInterface;
 use Marko\Database\Exceptions\SeederException;
 
@@ -14,12 +15,12 @@ readonly class SeederRunner
 {
     /**
      * @param array<string, SeederInterface> $seeders Map of class names to seeder instances
-     * @param bool $isProduction Whether we're running in production environment
+     * @param bool|null $isProduction Whether we're running in production environment, null to resolve it
      * @param TransactionInterface|null $transaction Optional transaction manager for atomic seeding
      */
     public function __construct(
         private array $seeders,
-        private bool $isProduction = false,
+        private ?bool $isProduction = null,
         private ?TransactionInterface $transaction = null,
     ) {}
 
@@ -35,7 +36,7 @@ readonly class SeederRunner
     public function runAll(
         array $definitions,
     ): void {
-        if ($this->isProduction) {
+        if ($this->isProduction ?? Environment::isProduction()) {
             throw SeederException::blockedInProduction();
         }
 
@@ -66,7 +67,7 @@ readonly class SeederRunner
         string $name,
         array $definitions,
     ): void {
-        if ($this->isProduction) {
+        if ($this->isProduction ?? Environment::isProduction()) {
             throw SeederException::blockedInProduction();
         }
 

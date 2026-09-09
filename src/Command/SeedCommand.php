@@ -9,6 +9,7 @@ use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
 use Marko\Core\Path\ProjectPaths;
+use Marko\Database\Config\Environment;
 use Marko\Database\Exceptions\SeederException;
 use Marko\Database\Seed\SeederDefinition;
 use Marko\Database\Seed\SeederDiscoveryInterface;
@@ -22,7 +23,7 @@ readonly class SeedCommand implements CommandInterface
         private SeederDiscoveryInterface $discovery,
         private SeederRunner $runner,
         private ProjectPaths $paths,
-        private bool $isProduction = false,
+        private ?bool $isProduction = null,
     ) {}
 
     public function execute(
@@ -30,7 +31,7 @@ readonly class SeedCommand implements CommandInterface
         Output $output,
     ): int {
         // Block in production - no --force flag support
-        if ($this->isProduction) {
+        if ($this->isProduction ?? Environment::isProduction()) {
             $output->writeLine('Error: Seeders cannot be run in production environment.');
             $output->writeLine('Seeders are meant for development and testing only.');
 
