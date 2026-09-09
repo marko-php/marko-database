@@ -299,7 +299,7 @@ function createMigrateCommand(
     ?MigrationGenerator $generator = null,
     ?SchemaDiff $diff = null,
     ?SqlGeneratorInterface $sqlGenerator = null,
-    bool $isProduction = false,
+    ?bool $isProduction = false,
 ): MigrateCommand {
     return new MigrateCommand(
         migrator: $migrator ?? createMigratorStub(),
@@ -470,6 +470,47 @@ it('does not generate migrations in production mode', function (): void {
 
     // Should NOT generate migrations in production
     expect($generator->generateCalled)->toBeFalse();
+});
+
+it('does not generate migrations when the environment is production and no flag is passed', function (): void {
+    $previous = $_ENV['APP_ENV'] ?? null;
+    $_ENV['APP_ENV'] = 'production';
+
+    try {
+        $diff = new SchemaDiff(
+            tablesToCreate: [
+                new Table(
+                    name: 'posts',
+                    columns: [
+                        new Column(name: 'id', type: 'INT', primaryKey: true),
+                    ],
+                    indexes: [],
+                ),
+            ],
+        );
+
+        /** @var MigrationGenerator&object{generateCalled: bool} $generator */
+        $generator = createMigrationGeneratorStub(
+            generatedPaths: ['/app/database/migrations/2024_01_01_000000_create_posts.php'],
+        );
+
+        $command = createMigrateCommand(
+            migrator: createMigratorStub(),
+            generator: $generator,
+            diff: $diff,
+            isProduction: null,
+        );
+
+        executeMigrateCommand($command);
+
+        expect($generator->generateCalled)->toBeFalse();
+    } finally {
+        if ($previous === null) {
+            unset($_ENV['APP_ENV']);
+        } else {
+            $_ENV['APP_ENV'] = $previous;
+        }
+    }
 });
 
 it('shows each migration being applied', function (): void {

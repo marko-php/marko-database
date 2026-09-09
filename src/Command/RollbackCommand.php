@@ -8,6 +8,7 @@ use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
+use Marko\Database\Config\Environment;
 use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
 
@@ -17,7 +18,7 @@ readonly class RollbackCommand implements CommandInterface
 {
     public function __construct(
         private Migrator $migrator,
-        private bool $isProduction = false,
+        private ?bool $isProduction = null,
     ) {}
 
     public function execute(
@@ -25,7 +26,7 @@ readonly class RollbackCommand implements CommandInterface
         Output $output,
     ): int {
         // Block in production - no --force flag support
-        if ($this->isProduction) {
+        if ($this->isProduction ?? Environment::isProduction()) {
             $output->writeLine('Error: Rollback cannot be run in production environment.');
             $output->writeLine('Rollback is never allowed in production, even with --force.');
 

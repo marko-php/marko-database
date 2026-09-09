@@ -9,6 +9,7 @@ use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
 use Marko\Core\Path\ProjectPaths;
+use Marko\Database\Config\Environment;
 use Marko\Database\Diff\DiffCalculator;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\SqlGeneratorInterface;
@@ -36,7 +37,7 @@ readonly class MigrateCommand implements CommandInterface
         private DiffCalculator $diffCalculator,
         private SqlGeneratorInterface $sqlGenerator,
         private ProjectPaths $paths,
-        private bool $isProduction = false,
+        private ?bool $isProduction = null,
     ) {}
 
     /**
@@ -48,6 +49,7 @@ readonly class MigrateCommand implements CommandInterface
     ): int {
         $verbose = $this->isVerbose($input);
         $noGenerate = $this->hasFlag($input, '--no-generate');
+        $isProduction = $this->isProduction ?? Environment::isProduction();
 
         // Get pending migrations
         $schemaPending = $this->migrator->getPending();
@@ -121,7 +123,7 @@ readonly class MigrateCommand implements CommandInterface
 
         // After running existing migrations, check for entity diffs in development mode
         // Skip if --no-generate flag is passed
-        if (!$this->isProduction && !$noGenerate) {
+        if (!$isProduction && !$noGenerate) {
             $generatedPaths = $this->generateMigrationsFromDiff($output, $verbose);
 
             // If new migrations were generated, run them
@@ -153,7 +155,7 @@ readonly class MigrateCommand implements CommandInterface
         // Nothing was done
         if ($schemaCount === 0 && $dataCount === 0) {
             // Check if there are entity diffs in production mode
-            if ($this->isProduction) {
+            if ($isProduction) {
                 $diff = $this->calculateDiff();
                 if (!$diff->isEmpty()) {
                     $output->writeLine('Warning: Entity schema differs from database.');
