@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Marko\Database\Exceptions;
 
 use Marko\Core\Exceptions\MarkoException;
+use Throwable;
 
 /**
  * Exception thrown for entity-related errors.
@@ -390,6 +391,151 @@ class EntityException extends MarkoException
             message: "Extender '$extenderClass' references parent '$parentClass' which was not included in the registration set",
             context: "Calling registerEntities() with extender '$extenderClass'",
             suggestion: "Include '$parentClass' in the same registerEntities() call, or use registerEntities() instead of registerEntity() for extender/parent pairs",
+        );
+    }
+
+    public static function castClassInvalid(
+        string $castClass,
+        string $context,
+    ): self {
+        return new self(
+            message: "Cast class '$castClass' must implement Marko\\Database\\Entity\\Cast\\CastInterface",
+            context: $context,
+            suggestion: "Make '$castClass' implement CastInterface (toPhp() and toDatabase()), or point #[Cast] at a class that does",
+        );
+    }
+
+    public static function castRequiresContainer(
+        string $castClass,
+    ): self {
+        return new self(
+            message: "Cast class '$castClass' requires constructor dependencies but no container is available to build it",
+            context: "Resolving cast '$castClass' through a CastResolver constructed without a ContainerInterface",
+            suggestion: 'Construct the CastResolver with the application container (new CastResolver($container)), or resolve EntityHydrator from the container',
+        );
+    }
+
+    public static function castResolutionFailed(
+        string $castClass,
+        Throwable $previous,
+    ): self {
+        return new self(
+            message: "Failed to build cast '$castClass': {$previous->getMessage()}",
+            context: "Resolving cast '$castClass' through the container",
+            suggestion: "Check that every constructor dependency of '$castClass' is bound in the container",
+            previous: $previous,
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function castAndEncryptedConflict(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Property '$property' on entity '$entityClass' declares both #[Cast] and #[Encrypted]",
+            context: "Parsing column metadata for '$entityClass::\$$property'",
+            suggestion: 'Use one of them. #[Encrypted] already applies the built-in conversion for the property type before encrypting',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function encryptionNotInstalled(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Property '$property' on entity '$entityClass' is #[Encrypted] but marko/encryption is not installed",
+            context: "Parsing column metadata for '$entityClass::\$$property'",
+            suggestion: 'Install an encryption driver: composer require marko/encryption-openssl',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function encryptorNotBound(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Property '$property' on entity '$entityClass' is #[Encrypted] but no EncryptorInterface implementation is bound",
+            context: "Parsing column metadata for '$entityClass::\$$property'",
+            suggestion: 'Install an encryption driver: composer require marko/encryption-openssl',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function encryptedColumnTypeMismatch(
+        string $entityClass,
+        string $property,
+        string $columnType,
+    ): self {
+        return new self(
+            message: "Encrypted property '$property' on entity '$entityClass' declares column type '$columnType'",
+            context: "Parsing column metadata for '$entityClass::\$$property'",
+            suggestion: "Ciphertext is stored in a text column. Remove type: '$columnType' from #[Column] or use type: 'text'",
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function encryptedPrimaryKey(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Primary key property '$property' on entity '$entityClass' cannot be #[Encrypted]",
+            context: "Parsing column metadata for '$entityClass::\$$property'",
+            suggestion: 'Encrypted values cannot be looked up by value. Remove #[Encrypted] from the primary key',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function invalidTimestampProperty(
+        string $entityClass,
+        string $property,
+        string $role,
+    ): self {
+        return new self(
+            message: "#[Timestamps] $role property '$property' on entity '$entityClass' is not a DateTimeImmutable #[Column] property",
+            context: "Parsing #[Timestamps] on entity '$entityClass'",
+            suggestion: "Declare #[Column] public ?DateTimeImmutable \$$property, or pass the correct property name to #[Timestamps($role: ...)]",
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function timestampsWithoutProperties(
+        string $entityClass,
+    ): self {
+        return new self(
+            message: "#[Timestamps] on entity '$entityClass' disables both createdAt and updatedAt",
+            context: "Parsing #[Timestamps] on entity '$entityClass'",
+            suggestion: 'Remove #[Timestamps], or keep at least one of createdAt/updatedAt',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function timestampsOnExtender(
+        string $entityClass,
+    ): self {
+        return new self(
+            message: "Extender entity '$entityClass' cannot declare #[Timestamps]",
+            context: "Parsing #[Timestamps] on extender entity '$entityClass'",
+            suggestion: 'Declare #[Timestamps] on the parent entity that owns the table',
         );
     }
 }

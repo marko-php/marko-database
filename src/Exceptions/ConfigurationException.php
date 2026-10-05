@@ -41,4 +41,14 @@ class ConfigurationException extends MarkoException
             suggestion: "When using client certificate authentication, both 'ssl_cert' and 'ssl_key' must be provided together",
         );
     }
+
+    public static function invalidTimezone(
+        string $timezone,
+    ): self {
+        return new self(
+            message: "Invalid database timezone: $timezone",
+            context: 'While reading the timezone key of config/database.php',
+            suggestion: "Set 'timezone' to a valid PHP timezone identifier such as 'UTC' or 'America/New_York'",
+        );
+    }
 }

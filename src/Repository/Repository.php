@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Marko\Database\Repository;
 
-use BackedEnum;
-use DateTimeImmutable;
 use Marko\Core\Event\EventDispatcherInterface;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\TransactionInterface;
@@ -725,7 +723,7 @@ abstract class Repository implements RepositoryInterface
             $value = $property->getValue($entity);
             $columnName = $propertyToColumn[$propertyName];
 
-            $data[$columnName] = $this->convertToDbValue($value);
+            $data[$columnName] = $this->hydrator->toDatabaseValue($value, $this->metadata->properties[$propertyName]);
         }
 
         // Collect dirty companion data. Companions with no originalValues
@@ -756,7 +754,7 @@ abstract class Repository implements RepositoryInterface
                 $value = $property->getValue($companion);
                 $columnName = $companionPropertyToColumn[$propertyName];
 
-                $data[$columnName] = $this->convertToDbValue($value);
+                $data[$columnName] = $this->hydrator->toDatabaseValue($value, $companionMetadata->properties[$propertyName]);
             }
 
             $participatingCompanions[] = [$companion, $companionMetadata];
@@ -795,27 +793,6 @@ abstract class Repository implements RepositoryInterface
         foreach ($participatingCompanions as [$companion, $companionMetadata]) {
             $this->hydrator->registerOriginalValues($companion, $companionMetadata);
         }
-    }
-
-    /**
-     * Convert a PHP value to a database-compatible value.
-     */
-    private function convertToDbValue(
-        mixed $value,
-    ): mixed {
-        if ($value === null) {
-            return null;
-        }
-
-        if ($value instanceof BackedEnum) {
-            return $value->value;
-        }
-
-        if ($value instanceof DateTimeImmutable) {
-            return $value->format('Y-m-d H:i:s');
-        }
-
-        return $value;
     }
 
     /**
