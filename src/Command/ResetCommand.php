@@ -8,6 +8,7 @@ use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
 
@@ -17,7 +18,7 @@ readonly class ResetCommand implements CommandInterface
 {
     public function __construct(
         private Migrator $migrator,
-        private bool $isProduction = false,
+        private AppEnvironment $appEnvironment,
     ) {}
 
     public function execute(
@@ -25,7 +26,7 @@ readonly class ResetCommand implements CommandInterface
         Output $output,
     ): int {
         // Block in production - no --force flag support
-        if ($this->isProduction) {
+        if ($this->appEnvironment->isProduction()) {
             $output->writeLine('Error: Reset cannot be run in production environment.');
             $output->writeLine('This command rolls back all migrations and is never allowed in production.');
 

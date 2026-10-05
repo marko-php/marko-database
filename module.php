@@ -3,8 +3,13 @@
 declare(strict_types=1);
 
 use Marko\Core\Container\ContainerInterface;
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
+use Marko\Database\Command\ConfirmationPrompterInterface;
+use Marko\Database\Command\StdinConfirmationPrompter;
+use Marko\Database\Config\DatabaseConfig;
 use Marko\Database\Connection\TransactionInterface;
+use Marko\Database\Diff\DiffCalculator;
 use Marko\Database\Entity\EntityDiscovery;
 use Marko\Database\Entity\EntityHydrator;
 use Marko\Database\Entity\EntityMetadataFactory;
@@ -33,6 +38,12 @@ return [
     },
     'bindings' => [
         SeederDiscoveryInterface::class => SeederDiscovery::class,
+        ConfirmationPrompterInterface::class => StdinConfirmationPrompter::class,
+        DiffCalculator::class => function (ContainerInterface $container): DiffCalculator {
+            return new DiffCalculator(
+                ignoredIndexes: $container->get(DatabaseConfig::class)->ignoreIndexes,
+            );
+        },
         SeederRunner::class => function (ContainerInterface $container): SeederRunner {
             $discovery = $container->get(SeederDiscoveryInterface::class);
             $paths = $container->get(ProjectPaths::class);
@@ -57,6 +68,7 @@ return [
 
             return new SeederRunner(
                 seeders: $seeders,
+                appEnvironment: $container->get(AppEnvironment::class),
                 transaction: $transaction,
             );
         },

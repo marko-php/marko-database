@@ -5,11 +5,14 @@ declare(strict_types=1);
 use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
+use Marko\Database\Command\ConfirmationPrompterInterface;
 use Marko\Database\Command\MigrateCommand;
 use Marko\Database\Diff\DiffCalculator;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\SqlGeneratorInterface;
+use Marko\Database\Diff\TableDiff;
 use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Entity\SchemaBuilder;
 use Marko\Database\Exceptions\MigrationException;
@@ -299,7 +302,8 @@ function createMigrateCommand(
     ?MigrationGenerator $generator = null,
     ?SchemaDiff $diff = null,
     ?SqlGeneratorInterface $sqlGenerator = null,
-    bool $isProduction = false,
+    ?string $appEnv = 'local',
+    ?ConfirmationPrompterInterface $prompter = null,
 ): MigrateCommand {
     return new MigrateCommand(
         migrator: $migrator ?? createMigratorStub(),
@@ -311,7 +315,8 @@ function createMigrateCommand(
         diffCalculator: createMigrateDiffCalculator($diff ?? new SchemaDiff()),
         sqlGenerator: $sqlGenerator ?? createMigrateSqlGenerator(),
         paths: new ProjectPaths('/test'),
-        isProduction: $isProduction,
+        appEnvironment: new AppEnvironment($appEnv === null ? [] : ['APP_ENV' => $appEnv]),
+        confirmationPrompter: $prompter ?? Helpers::createPrompter(),
     );
 }
 
@@ -343,10 +348,10 @@ it('registers as db:migrate command via #[Command] attribute', function (): void
         ->and($attributes[0]->newInstance()->name)->toBe('db:migrate');
 });
 
-it('declares no-generate, verbose and v as flags', function (): void {
+it('declares generate, no-generate, force, verbose and v as value-less flags', function (): void {
     $attribute = new ReflectionClass(MigrateCommand::class)->getAttributes(Command::class)[0]->newInstance();
 
-    expect($attribute->flags)->toBe(['no-generate', 'verbose', 'v']);
+    expect($attribute->flags)->toBe(['generate', 'no-generate', 'force', 'verbose', 'v']);
 });
 
 it('implements CommandInterface', function (): void {
@@ -469,7 +474,7 @@ it('does not generate migrations in production mode', function (): void {
         migrator: $migrator,
         generator: $generator,
         diff: $diff,
-        isProduction: true,
+        appEnv: 'production',
     );
 
     executeMigrateCommand($command);
@@ -696,7 +701,8 @@ it('excludes migrations table from diff calculation', function (): void {
         diffCalculator: new DiffCalculator(),
         sqlGenerator: createMigrateSqlGenerator(),
         paths: new ProjectPaths('/test'),
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
+        confirmationPrompter: Helpers::createPrompter(),
     );
 
     ['output' => $output] = executeMigrateCommand($command);
@@ -742,7 +748,8 @@ it('merges extender columns into parent table schema before computing diff (regr
         diffCalculator: $capturingCalculator,
         sqlGenerator: createMigrateSqlGenerator(),
         paths: new ProjectPaths('/test'),
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
+        confirmationPrompter: Helpers::createPrompter(),
     );
 
     executeMigrateCommand($command);
@@ -754,4 +761,318 @@ it('merges extender columns into parent table schema before computing diff (regr
 
     expect($columnNames)->toContain('id')
         ->and($columnNames)->toContain('extra');
+});
+
+function createTableDiffForMigrate(): SchemaDiff
+{
+    return new SchemaDiff(
+        tablesToCreate: [
+            new Table(name: 'posts', columns: [new Column(name: 'id', type: 'INT', primaryKey: true)]),
+        ],
+    );
+}
+
+function createDestructiveDiffForMigrate(): SchemaDiff
+{
+    return new SchemaDiff(
+        tablesToAlter: [
+            'shows' => new TableDiff(
+                tableName: 'shows',
+                columnsToDrop: [new Column(name: 'legacy', type: 'TEXT')],
+                indexesToDrop: [new Index(name: 'shows_old_idx', columns: ['legacy'])],
+            ),
+        ],
+    );
+}
+
+function createDestructiveSqlGeneratorForMigrate(): SqlGeneratorInterface
+{
+    return createMigrateSqlGenerator(
+        upStatements: ['ALTER TABLE "shows" DROP COLUMN "legacy"', 'DROP INDEX "shows_old_idx"'],
+    );
+}
+
+describe('environment gating', function (): void {
+    it('applies pending migrations but does not generate in production', function (): void {
+        $migrator = createMigratorStub(pendingMigrations: ['2024_01_01_000000_create_users_table']);
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+
+        $command = createMigrateCommand(
+            migrator: $migrator,
+            generator: $generator,
+            diff: createTableDiffForMigrate(),
+            appEnv: 'production',
+        );
+
+        ['exitCode' => $exitCode] = executeMigrateCommand($command);
+
+        expect($exitCode)->toBe(0)
+            ->and($migrator->migrateApplied)->toBe(['2024_01_01_000000_create_users_table'])
+            ->and($generator->generateCalled)->toBeFalse();
+    });
+
+    it('does not generate when APP_ENV is unset', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+
+        $command = createMigrateCommand(generator: $generator, diff: createTableDiffForMigrate(), appEnv: null);
+
+        executeMigrateCommand($command);
+
+        expect($generator->generateCalled)->toBeFalse();
+    });
+
+    it('lists the differing statements in the production drift warning', function (): void {
+        $command = createMigrateCommand(
+            diff: createTableDiffForMigrate(),
+            sqlGenerator: createMigrateSqlGenerator(upStatements: ['CREATE TABLE "posts" ("id" INTEGER)']),
+            appEnv: 'production',
+        );
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand($command);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Warning: Entity schema differs from database.')
+            ->and($output)->toContain('  CREATE TABLE "posts" ("id" INTEGER)')
+            ->and($output)->toContain('Run db:migrate in development to generate a migration');
+    });
+
+    it('prints the drift warning in production even after applying pending migrations', function (): void {
+        $command = createMigrateCommand(
+            migrator: createMigratorStub(pendingMigrations: ['2024_01_01_000000_create_users_table']),
+            diff: createTableDiffForMigrate(),
+            sqlGenerator: createMigrateSqlGenerator(upStatements: ['CREATE TABLE "posts" ("id" INTEGER)']),
+            appEnv: 'production',
+        );
+
+        ['output' => $output] = executeMigrateCommand($command);
+
+        expect($output)->toContain('Applied 1 schema migration(s).')
+            ->and($output)->toContain('Warning: Entity schema differs from database.');
+    });
+
+    it('does not print a drift warning in production when the schema matches', function (): void {
+        $command = createMigrateCommand(appEnv: 'production');
+
+        ['output' => $output] = executeMigrateCommand($command);
+
+        expect($output)->not->toContain('Warning')
+            ->and($output)->toContain('Nothing to migrate.');
+    });
+
+    it('does not generate when APP_ENV is staging', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+
+        $command = createMigrateCommand(generator: $generator, diff: createTableDiffForMigrate(), appEnv: 'staging');
+
+        ['output' => $output] = executeMigrateCommand($command);
+
+        expect($generator->generateCalled)->toBeFalse()
+            ->and($output)->toContain('Warning: Entity schema differs from database.');
+    });
+
+    it('generates in local', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+
+        $command = createMigrateCommand(generator: $generator, diff: createTableDiffForMigrate(), appEnv: 'local');
+
+        executeMigrateCommand($command);
+
+        expect($generator->generateCalled)->toBeTrue();
+    });
+
+    it('does not generate in local with --no-generate', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+
+        $command = createMigrateCommand(generator: $generator, diff: createTableDiffForMigrate(), appEnv: 'local');
+
+        ['output' => $output] = executeMigrateCommand($command, ['marko', 'db:migrate', '--no-generate']);
+
+        expect($generator->generateCalled)->toBeFalse()
+            ->and($output)->not->toContain('Warning');
+    });
+
+    it('generates outside development with --generate', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+
+        $command = createMigrateCommand(
+            generator: $generator,
+            diff: createTableDiffForMigrate(),
+            appEnv: 'production',
+        );
+
+        ['output' => $output] = executeMigrateCommand($command, ['marko', 'db:migrate', '--generate']);
+
+        expect($generator->generateCalled)->toBeTrue()
+            ->and($output)->not->toContain('Warning');
+    });
+
+    it('rejects --generate combined with --no-generate', function (): void {
+        $migrator = createMigratorStub(pendingMigrations: ['2024_01_01_000000_create_users_table']);
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+
+        $command = createMigrateCommand(migrator: $migrator, generator: $generator, diff: createTableDiffForMigrate());
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand(
+            $command,
+            ['marko', 'db:migrate', '--generate', '--no-generate'],
+        );
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('--generate and --no-generate cannot be used together')
+            ->and($migrator->migrateCallCount)->toBe(0)
+            ->and($generator->generateCalled)->toBeFalse();
+    });
+});
+
+describe('destructive changes', function (): void {
+    it('lists each destructive statement before generating', function (): void {
+        $command = createMigrateCommand(
+            generator: createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']),
+            diff: createDestructiveDiffForMigrate(),
+            sqlGenerator: createDestructiveSqlGeneratorForMigrate(),
+        );
+
+        ['output' => $output] = executeMigrateCommand($command, ['marko', 'db:migrate', '--force']);
+
+        expect($output)->toContain('This migration would remove existing database objects:')
+            ->and($output)->toContain('  ALTER TABLE "shows" DROP COLUMN "legacy"')
+            ->and($output)->toContain('  DROP INDEX "shows_old_idx"');
+    });
+
+    it('refuses to generate destructive changes non-interactively without --force', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
+        $prompter = Helpers::createPrompter(interactive: false);
+
+        $command = createMigrateCommand(
+            generator: $generator,
+            diff: createDestructiveDiffForMigrate(),
+            sqlGenerator: createDestructiveSqlGeneratorForMigrate(),
+            prompter: $prompter,
+        );
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand($command);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Re-run with --force to generate these changes.')
+            ->and($prompter->asked)->toBe(0)
+            ->and($generator->generateCalled)->toBeFalse();
+    });
+
+    it('generates destructive changes non-interactively with --force', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
+        $prompter = Helpers::createPrompter(interactive: false);
+
+        $command = createMigrateCommand(
+            generator: $generator,
+            diff: createDestructiveDiffForMigrate(),
+            sqlGenerator: createDestructiveSqlGeneratorForMigrate(),
+            prompter: $prompter,
+        );
+
+        ['exitCode' => $exitCode] = executeMigrateCommand($command, ['marko', 'db:migrate', '--force']);
+
+        expect($exitCode)->toBe(0)
+            ->and($prompter->asked)->toBe(0)
+            ->and($generator->generateCalled)->toBeTrue();
+    });
+
+    it('generates destructive changes when the user confirms', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
+        $prompter = Helpers::createPrompter(interactive: true, answer: true);
+
+        $command = createMigrateCommand(
+            generator: $generator,
+            diff: createDestructiveDiffForMigrate(),
+            sqlGenerator: createDestructiveSqlGeneratorForMigrate(),
+            prompter: $prompter,
+        );
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand($command);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Generate a migration with these changes? [y/N]')
+            ->and($prompter->asked)->toBe(1)
+            ->and($generator->generateCalled)->toBeTrue();
+    });
+
+    it('does not generate destructive changes when the user declines', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
+        $prompter = Helpers::createPrompter(interactive: true);
+
+        $command = createMigrateCommand(
+            generator: $generator,
+            diff: createDestructiveDiffForMigrate(),
+            sqlGenerator: createDestructiveSqlGeneratorForMigrate(),
+            prompter: $prompter,
+        );
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand($command);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Migration generation cancelled.')
+            ->and($generator->generateCalled)->toBeFalse();
+    });
+
+    it('does not prompt when the diff has no destructive changes', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
+        $prompter = Helpers::createPrompter(interactive: true);
+
+        $command = createMigrateCommand(
+            generator: $generator,
+            diff: createTableDiffForMigrate(),
+            prompter: $prompter,
+        );
+
+        ['output' => $output] = executeMigrateCommand($command);
+
+        expect($prompter->asked)->toBe(0)
+            ->and($output)->not->toContain('remove existing database objects')
+            ->and($generator->generateCalled)->toBeTrue();
+    });
+
+    it('treats dropped foreign keys as destructive', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
+        $diff = new SchemaDiff(
+            tablesToAlter: [
+                'posts' => new TableDiff(
+                    tableName: 'posts',
+                    foreignKeysToDrop: [
+                        new ForeignKey(
+                            name: 'fk_posts_user_id',
+                            columns: ['user_id'],
+                            referencedTable: 'users',
+                            referencedColumns: ['id'],
+                        ),
+                    ],
+                ),
+            ],
+        );
+
+        $command = createMigrateCommand(generator: $generator, diff: $diff);
+
+        ['exitCode' => $exitCode] = executeMigrateCommand($command);
+
+        expect($exitCode)->toBe(1)
+            ->and($generator->generateCalled)->toBeFalse();
+    });
+
+    it('applies the same confirmation when --generate is used outside development', function (): void {
+        $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
+
+        $command = createMigrateCommand(
+            generator: $generator,
+            diff: createDestructiveDiffForMigrate(),
+            sqlGenerator: createDestructiveSqlGeneratorForMigrate(),
+            appEnv: 'production',
+        );
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand(
+            $command,
+            ['marko', 'db:migrate', '--generate'],
+        );
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('Re-run with --force')
+            ->and($generator->generateCalled)->toBeFalse();
+    });
 });

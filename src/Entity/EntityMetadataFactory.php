@@ -229,6 +229,7 @@ class EntityMetadataFactory
                 name: $index->name,
                 columns: $index->columns,
                 unique: $index->unique,
+                where: $index->where,
             );
         }
 
@@ -250,6 +251,7 @@ class EntityMetadataFactory
             extends: $tableAttr->extends,
             createdAtProperty: $createdAtProperty,
             updatedAtProperty: $updatedAtProperty,
+            unmanagedIndexes: $tableAttr->unmanagedIndexes,
         );
 
         $this->cache[$entityClass] = $metadata;

@@ -7,6 +7,7 @@ namespace Marko\Database\Tests\Command;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
 use Marko\Core\Path\ProjectPaths;
+use Marko\Database\Command\ConfirmationPrompterInterface;
 use Marko\Database\Command\DiffCommand;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\StatementInterface;
@@ -15,6 +16,7 @@ use Marko\Database\Entity\EntityDiscovery;
 use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Entity\SchemaBuilder;
 use Marko\Database\Introspection\IntrospectorInterface;
+use Marko\Database\Migration\Migrator;
 use Marko\Database\Schema\SchemaRegistry;
 use Marko\Database\Schema\Table;
 
@@ -258,5 +260,70 @@ final class Helpers
         $result = self::getOutputContent($stream);
 
         return ['output' => $result, 'exitCode' => $exitCode];
+    }
+
+    /**
+     * Create a Migrator stub that records reset() and migrate() calls.
+     *
+     * @return Migrator&object{resetCalled: bool, migrateCalled: bool}
+     */
+    public static function createResettingMigrator(): Migrator
+    {
+        /** @noinspection PhpMissingParentConstructorInspection - Test stub intentionally skips parent */
+        return new class () extends Migrator
+        {
+            public bool $resetCalled = false;
+
+            public bool $migrateCalled = false;
+
+            /** @noinspection PhpMissingParentConstructorInspection */
+            public function __construct() {}
+
+            public function reset(): array
+            {
+                $this->resetCalled = true;
+
+                return ['2024_01_01_000000_create_posts'];
+            }
+
+            public function migrate(): array
+            {
+                $this->migrateCalled = true;
+
+                return ['2024_01_01_000000_create_posts'];
+            }
+        };
+    }
+
+    /**
+     * Create a confirmation prompter that answers without touching STDIN.
+     *
+     * @return ConfirmationPrompterInterface&object{asked: int}
+     */
+    public static function createPrompter(
+        bool $interactive = false,
+        bool $answer = false,
+    ): ConfirmationPrompterInterface {
+        return new class ($interactive, $answer) implements ConfirmationPrompterInterface
+        {
+            public int $asked = 0;
+
+            public function __construct(
+                private readonly bool $interactive,
+                private readonly bool $answer,
+            ) {}
+
+            public function isInteractive(): bool
+            {
+                return $this->interactive;
+            }
+
+            public function confirm(): bool
+            {
+                $this->asked++;
+
+                return $this->answer;
+            }
+        };
     }
 }

@@ -26,6 +26,38 @@ describe('DatabaseConfig::fromArray()', function (): void {
             ->and($config->password)->toBe('secret');
     });
 
+    it('reads migrations.ignore_indexes from the database config', function (): void {
+        $base = [
+            'driver' => 'pgsql',
+            'host' => 'localhost',
+            'port' => 5432,
+            'database' => 'mydb',
+            'username' => 'admin',
+            'password' => 'secret',
+        ];
+
+        $configured = DatabaseConfig::fromArray([
+            ...$base,
+            'migrations' => ['ignore_indexes' => ['shows_live_partial_idx', '*_gin_idx']],
+        ]);
+        $unconfigured = DatabaseConfig::fromArray($base);
+
+        expect($configured->ignoreIndexes)->toBe(['shows_live_partial_idx', '*_gin_idx'])
+            ->and($unconfigured->ignoreIndexes)->toBe([]);
+    });
+
+    it('rejects a non-string entry in migrations.ignore_indexes', function (): void {
+        expect(fn () => DatabaseConfig::fromArray([
+            'driver' => 'pgsql',
+            'host' => 'localhost',
+            'port' => 5432,
+            'database' => 'mydb',
+            'username' => 'admin',
+            'password' => 'secret',
+            'migrations' => ['ignore_indexes' => ['ok_idx', 42]],
+        ]))->toThrow(ConfigurationException::class, 'migrations.ignore_indexes');
+    });
+
     it('throws ConfigurationException when a required key is missing from the array', function (): void {
         expect(fn () => DatabaseConfig::fromArray([
             'host' => 'localhost',

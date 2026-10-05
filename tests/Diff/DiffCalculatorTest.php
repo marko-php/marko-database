@@ -310,6 +310,77 @@ describe('DiffCalculator', function (): void {
             ->and($tableDiff->indexesToDrop[0]->name)->toBe('idx_old');
     });
 
+    it('does not drop an index listed in the table unmanagedIndexes', function (): void {
+        $entitySchema = [
+            'shows' => new Table(
+                name: 'shows',
+                columns: [new Column(name: 'id', type: 'INT', primaryKey: true)],
+                unmanagedIndexes: ['shows_live_partial_idx'],
+            ),
+        ];
+        $databaseSchema = [
+            'shows' => new Table(
+                name: 'shows',
+                columns: [new Column(name: 'id', type: 'INT', primaryKey: true)],
+                indexes: [new Index(name: 'shows_live_partial_idx', columns: ['id'], where: 'id > 0')],
+            ),
+        ];
+
+        $diff = $this->calculator->calculate($entitySchema, $databaseSchema);
+
+        expect($diff->isEmpty())->toBeTrue();
+    });
+
+    it('does not drop an index matching a configured ignore pattern', function (): void {
+        $calculator = new DiffCalculator(ignoredIndexes: ['shows_manual_idx', '*_gin_idx']);
+        $entitySchema = [
+            'shows' => new Table(
+                name: 'shows',
+                columns: [new Column(name: 'id', type: 'INT', primaryKey: true)],
+            ),
+        ];
+        $databaseSchema = [
+            'shows' => new Table(
+                name: 'shows',
+                columns: [new Column(name: 'id', type: 'INT', primaryKey: true)],
+                indexes: [
+                    new Index(name: 'shows_manual_idx', columns: ['id']),
+                    new Index(name: 'shows_tags_gin_idx', columns: ['id']),
+                ],
+            ),
+        ];
+
+        $diff = $calculator->calculate($entitySchema, $databaseSchema);
+
+        expect($diff->isEmpty())->toBeTrue();
+    });
+
+    it('still drops undeclared indexes that are not ignored', function (): void {
+        $calculator = new DiffCalculator(ignoredIndexes: ['*_gin_idx']);
+        $entitySchema = [
+            'shows' => new Table(
+                name: 'shows',
+                columns: [new Column(name: 'id', type: 'INT', primaryKey: true)],
+                unmanagedIndexes: ['shows_live_partial_idx'],
+            ),
+        ];
+        $databaseSchema = [
+            'shows' => new Table(
+                name: 'shows',
+                columns: [new Column(name: 'id', type: 'INT', primaryKey: true)],
+                indexes: [
+                    new Index(name: 'shows_live_partial_idx', columns: ['id']),
+                    new Index(name: 'shows_stale_idx', columns: ['id']),
+                ],
+            ),
+        ];
+
+        $diff = $calculator->calculate($entitySchema, $databaseSchema);
+
+        expect($diff->tablesToAlter['shows']->indexesToDrop)->toHaveCount(1)
+            ->and($diff->tablesToAlter['shows']->indexesToDrop[0]->name)->toBe('shows_stale_idx');
+    });
+
     it('detects new foreign keys', function (): void {
         $entitySchema = [
             'posts' => new Table(

@@ -81,3 +81,11 @@ it('allows multiple #[Index] attributes on a class', function (): void {
         ->and($indexes[2]->name)->toBe('idx_author_published')
         ->and($indexes[2]->columns)->toBe(['author_id', 'published_at']);
 });
+
+it('accepts a where predicate on the Index attribute', function (): void {
+    $index = new Index(name: 'idx_live', columns: ['status'], where: "status = 'live'");
+    $plain = new Index(name: 'idx_plain', columns: ['status']);
+
+    expect($index->where)->toBe("status = 'live'")
+        ->and($plain->where)->toBeNull();
+});

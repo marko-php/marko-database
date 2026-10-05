@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Database\Connection\TransactionInterface;
 use Marko\Database\Exceptions\SeederException;
 use Marko\Database\Seed\SeederDefinition;
@@ -64,7 +65,7 @@ describe('SeederRunner', function (): void {
                 get_class($seeder2) => $seeder2,
                 get_class($seeder3) => $seeder3,
             ],
-            isProduction: false,
+            appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
         );
 
         $runner->runAll($definitions);
@@ -94,7 +95,7 @@ describe('SeederRunner', function (): void {
 
         $runner = new SeederRunner(
             seeders: [get_class($seeder) => $seeder],
-            isProduction: false,
+            appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
         );
 
         $runner->runAll($definitions);
@@ -117,7 +118,7 @@ describe('SeederRunner', function (): void {
 
         $runner = new SeederRunner(
             seeders: [get_class($seeder) => $seeder],
-            isProduction: true,
+            appEnvironment: new AppEnvironment(['APP_ENV' => 'production']),
         );
 
         expect(fn () => $runner->runAll($definitions))
@@ -164,7 +165,7 @@ describe('SeederRunner', function (): void {
                 get_class($userSeeder) => $userSeeder,
                 get_class($postSeeder) => $postSeeder,
             ],
-            isProduction: false,
+            appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
         );
 
         $runner->runByName('users', $definitions);
@@ -178,7 +179,7 @@ describe('SeederRunner', function (): void {
 
         $runner = new SeederRunner(
             seeders: [],
-            isProduction: false,
+            appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
         );
 
         expect(fn () => $runner->runByName('nonexistent', $definitions))
@@ -257,7 +258,7 @@ describe('SeederRunner', function (): void {
 
         $runner = new SeederRunner(
             seeders: [get_class($seeder) => $seeder],
-            isProduction: false,
+            appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
             transaction: $transaction,
         );
 
@@ -330,7 +331,7 @@ describe('SeederRunner', function (): void {
 
         $runner = new SeederRunner(
             seeders: [get_class($seeder) => $seeder],
-            isProduction: false,
+            appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
             transaction: $transaction,
         );
 

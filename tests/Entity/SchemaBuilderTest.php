@@ -116,6 +116,40 @@ it('converts IndexMetadata to Schema Index', function (): void {
         ->and($table->indexes[1]->type)->toBe(IndexType::Unique);
 });
 
+it('builds a schema Index carrying the where predicate', function (): void {
+    $entity = new #[Table('shows')]
+    #[Index('shows_live_idx', ['status'], where: "status = 'live'")]
+    class () extends Entity
+    {
+        #[Column(primaryKey: true)]
+        public int $id;
+
+        #[Column]
+        public string $status;
+    };
+
+    $metadata = $this->metadataFactory->parse($entity::class);
+    $table = $this->schemaBuilder->build($metadata);
+
+    expect($metadata->indexes[0]->where)->toBe("status = 'live'")
+        ->and($table->indexes[0]->where)->toBe("status = 'live'");
+});
+
+it('carries unmanagedIndexes from the Table attribute to the schema Table', function (): void {
+    $entity = new #[Table('shows', unmanagedIndexes: ['shows_live_partial_idx'])]
+    class () extends Entity
+    {
+        #[Column(primaryKey: true)]
+        public int $id;
+    };
+
+    $metadata = $this->metadataFactory->parse($entity::class);
+    $table = $this->schemaBuilder->build($metadata);
+
+    expect($metadata->unmanagedIndexes)->toBe(['shows_live_partial_idx'])
+        ->and($table->unmanagedIndexes)->toBe(['shows_live_partial_idx']);
+});
+
 it('preserves foreign key references in Schema Column', function (): void {
     $entity = new #[Table('posts')] class () extends Entity
     {

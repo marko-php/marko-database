@@ -24,6 +24,7 @@ readonly class EntityMetadata
      * @param array<class-string> $extenders List of extender classes registered on this entity (set on a parent)
      * @param ?string $createdAtProperty Property maintained as the creation timestamp via #[Timestamps]
      * @param ?string $updatedAtProperty Property maintained as the update timestamp via #[Timestamps]
+     * @param list<string> $unmanagedIndexes Index names (or patterns) the entity diff never drops
      */
     public function __construct(
         public string $entityClass,
@@ -37,6 +38,7 @@ readonly class EntityMetadata
         public array $extenders = [],
         public ?string $createdAtProperty = null,
         public ?string $updatedAtProperty = null,
+        public array $unmanagedIndexes = [],
     ) {}
 
     /**
@@ -74,6 +76,7 @@ readonly class EntityMetadata
             extenders: $extenders,
             createdAtProperty: $this->createdAtProperty,
             updatedAtProperty: $this->updatedAtProperty,
+            unmanagedIndexes: $this->unmanagedIndexes,
         );
     }
 

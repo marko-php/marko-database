@@ -38,6 +38,7 @@ class SchemaBuilder
             columns: $columns,
             indexes: $indexes,
             foreignKeys: $foreignKeys,
+            unmanagedIndexes: $metadata->unmanagedIndexes,
         );
     }
 
@@ -72,6 +73,7 @@ class SchemaBuilder
             name: $metadata->name,
             columns: $metadata->columns,
             type: $metadata->unique ? IndexType::Unique : IndexType::Btree,
+            where: $metadata->where,
         );
     }
 

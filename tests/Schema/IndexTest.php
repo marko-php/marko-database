@@ -46,4 +46,15 @@ describe('Index', function (): void {
         $reflection = new ReflectionClass($btreeIndex);
         expect($reflection->isReadOnly())->toBeTrue();
     });
+
+    it('treats indexes with different where predicates as not equal', function (): void {
+        $partial = new Index(name: 'idx_live', columns: ['status'], where: "status = 'live'");
+        $samePartial = new Index(name: 'idx_live', columns: ['status'], where: "status = 'live'");
+        $otherPartial = new Index(name: 'idx_live', columns: ['status'], where: "status = 'draft'");
+        $full = new Index(name: 'idx_live', columns: ['status']);
+
+        expect($partial->equals($samePartial))->toBeTrue()
+            ->and($partial->equals($otherPartial))->toBeFalse()
+            ->and($partial->equals($full))->toBeFalse();
+    });
 });

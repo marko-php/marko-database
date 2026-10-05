@@ -36,6 +36,23 @@ readonly class SchemaDiff
     }
 
     /**
+     * A diff holding only the drops (tables, columns, indexes, foreign keys), to show what would be removed.
+     */
+    public function destructiveOnly(): self
+    {
+        return new self(
+            tablesToDrop: $this->tablesToDrop,
+            tablesToAlter: array_filter(
+                array_map(
+                    static fn (TableDiff $tableDiff): TableDiff => $tableDiff->destructiveOnly(),
+                    $this->tablesToAlter,
+                ),
+                static fn (TableDiff $tableDiff): bool => !$tableDiff->isEmpty(),
+            ),
+        );
+    }
+
+    /**
      * @return array<string>
      */
     public function getDestructiveChanges(): array

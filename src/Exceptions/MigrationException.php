@@ -22,6 +22,18 @@ class MigrationException extends MarkoException
         );
     }
 
+    public static function partialIndexNotSupported(
+        string $indexName,
+        string $driver,
+    ): self {
+        return new self(
+            message: "Index '$indexName' declares a WHERE predicate, but $driver does not support partial indexes",
+            context: "While generating SQL for index '$indexName'",
+            suggestion: "Remove 'where' from the #[Index] attribute, or create the index by hand in a migration and "
+                . 'list its name in #[Table(unmanagedIndexes: [...])] so db:migrate leaves it alone.',
+        );
+    }
+
     public static function migrationNotFound(
         string $migrationName,
     ): self {

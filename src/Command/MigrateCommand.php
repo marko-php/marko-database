@@ -8,6 +8,7 @@ use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Diff\DiffCalculator;
 use Marko\Database\Diff\SchemaDiff;
@@ -22,8 +23,23 @@ use Marko\Database\Migration\Migrator;
 use Marko\Database\Schema\SchemaRegistry;
 use Marko\Database\Schema\Table;
 
-/** @noinspection PhpUnused */
-#[Command(name: 'db:migrate', description: 'Apply database migrations', flags: ['no-generate', 'verbose', 'v'])]
+/**
+ * Applies pending migration files, then, in development, generates and applies a
+ * migration for any difference between the entities and the database.
+ *
+ * Generation only runs automatically when AppEnvironment::isDevelopment() is true.
+ * Elsewhere (production, staging, or APP_ENV unset) the command applies the
+ * committed files and only warns about drift, unless --generate is passed.
+ * A generated migration that would drop columns, indexes or foreign keys is listed
+ * first and needs confirmation, or --force when nobody can answer.
+ *
+ * @noinspection PhpUnused
+ */
+#[Command(
+    name: 'db:migrate',
+    description: 'Apply database migrations',
+    flags: ['generate', 'no-generate', 'force', 'verbose', 'v'],
+)]
 readonly class MigrateCommand implements CommandInterface
 {
     public function __construct(
@@ -36,7 +52,8 @@ readonly class MigrateCommand implements CommandInterface
         private DiffCalculator $diffCalculator,
         private SqlGeneratorInterface $sqlGenerator,
         private ProjectPaths $paths,
-        private bool $isProduction = false,
+        private AppEnvironment $appEnvironment,
+        private ConfirmationPrompterInterface $confirmationPrompter,
     ) {}
 
     /**
@@ -48,6 +65,15 @@ readonly class MigrateCommand implements CommandInterface
     ): int {
         $verbose = $this->isVerbose($input);
         $noGenerate = $input->hasOption('no-generate');
+        $forceGenerate = $input->hasOption('generate');
+
+        if ($noGenerate && $forceGenerate) {
+            $output->writeLine('Error: --generate and --no-generate cannot be used together.');
+
+            return 1;
+        }
+
+        $shouldGenerate = !$noGenerate && ($forceGenerate || $this->appEnvironment->isDevelopment());
 
         // Get pending migrations
         $schemaPending = $this->migrator->getPending();
@@ -119,10 +145,28 @@ readonly class MigrateCommand implements CommandInterface
             }
         }
 
-        // After running existing migrations, check for entity diffs in development mode
-        // Skip if --no-generate flag is passed
-        if (!$this->isProduction && !$noGenerate) {
-            $generatedPaths = $this->generateMigrationsFromDiff($output, $verbose);
+        // After running existing migrations, generate a migration for any entity diff
+        // (development, or --generate), or only report the drift (everywhere else).
+        if ($shouldGenerate) {
+            try {
+                $diff = $this->calculateDiff();
+                $generatedPaths = [];
+
+                if (!$diff->isEmpty()) {
+                    $exitCode = $this->confirmDestructiveChanges($diff, $input, $output);
+
+                    if ($exitCode !== null) {
+                        return $exitCode;
+                    }
+
+                    $generatedPaths = $this->generateMigrationsFromDiff($diff, $output, $verbose);
+                }
+            } catch (MigrationException $e) {
+                $output->writeLine('');
+                $output->writeLine("Error: {$e->getMessage()}");
+
+                return 1;
+            }
 
             // If new migrations were generated, run them
             if (!empty($generatedPaths)) {
@@ -148,19 +192,18 @@ readonly class MigrateCommand implements CommandInterface
                     }
                 }
             }
+        } elseif (!$noGenerate) {
+            try {
+                $this->reportDrift($output);
+            } catch (MigrationException $e) {
+                $output->writeLine("Error: {$e->getMessage()}");
+
+                return 1;
+            }
         }
 
         // Nothing was done
         if ($schemaCount === 0 && $dataCount === 0) {
-            // Check if there are entity diffs in production mode
-            if ($this->isProduction) {
-                $diff = $this->calculateDiff();
-                if (!$diff->isEmpty()) {
-                    $output->writeLine('Warning: Entity schema differs from database.');
-                    $output->writeLine('Run db:migrate in development to generate migrations.');
-                }
-            }
-
             $output->writeLine('Nothing to migrate.');
 
             return 0;
@@ -173,21 +216,93 @@ readonly class MigrateCommand implements CommandInterface
     }
 
     /**
-     * Generate migrations from entity/database diff in development mode.
+     * Outside development, list how the entities differ from the database instead of generating.
      *
-     * @return array<string> Paths to generated migration files
-     * @throws EntityException
+     * @throws EntityException|MigrationException
      */
-    private function generateMigrationsFromDiff(
+    private function reportDrift(
         Output $output,
-        bool $verbose,
-    ): array {
+    ): void {
         $diff = $this->calculateDiff();
 
         if ($diff->isEmpty()) {
-            return [];
+            return;
         }
 
+        $environment = $this->appEnvironment->name();
+
+        $output->writeLine('Warning: Entity schema differs from database.');
+        $output->writeLine("Migrations are not generated in the '$environment' environment. Differences:");
+
+        foreach ($this->sqlGenerator->generateUp($diff) as $sql) {
+            $output->writeLine("  $sql");
+        }
+
+        $output->writeLine('Run db:migrate in development to generate a migration, then commit and deploy it.');
+        $output->writeLine('');
+    }
+
+    /**
+     * List destructive statements and ask before generating them.
+     *
+     * Returns null when generation may go ahead, or the exit code to stop with:
+     * 1 when nobody can confirm and --force was not passed, 0 when the user declines.
+     *
+     * @throws MigrationException
+     */
+    private function confirmDestructiveChanges(
+        SchemaDiff $diff,
+        Input $input,
+        Output $output,
+    ): ?int {
+        if (!$diff->hasDestructiveChanges()) {
+            return null;
+        }
+
+        $output->writeLine('This migration would remove existing database objects:');
+
+        foreach ($this->sqlGenerator->generateUp($diff->destructiveOnly()) as $sql) {
+            $output->writeLine("  $sql");
+        }
+
+        $output->writeLine('');
+
+        if ($input->hasOption('force')) {
+            return null;
+        }
+
+        if (!$this->confirmationPrompter->isInteractive()) {
+            $output->writeLine('Error: Refusing to generate destructive changes without confirmation.');
+            $output->writeLine('Re-run with --force to generate these changes.');
+            $output->writeLine(
+                'To keep a hand-made index instead, list it in #[Table(unmanagedIndexes: [...])] or '
+                . 'database.migrations.ignore_indexes.',
+            );
+
+            return 1;
+        }
+
+        $output->write('Generate a migration with these changes? [y/N] ');
+
+        if ($this->confirmationPrompter->confirm()) {
+            return null;
+        }
+
+        $output->writeLine('Migration generation cancelled.');
+
+        return 0;
+    }
+
+    /**
+     * Generate migration files for an entity/database diff.
+     *
+     * @return array<string> Paths to generated migration files
+     */
+    private function generateMigrationsFromDiff(
+        SchemaDiff $diff,
+        Output $output,
+        bool $verbose,
+    ): array {
         $paths = $this->migrationGenerator->generate($diff);
 
         if (!empty($paths)) {

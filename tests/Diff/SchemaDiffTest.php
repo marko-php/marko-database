@@ -7,6 +7,7 @@ namespace Marko\Database\Tests\Diff;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\TableDiff;
 use Marko\Database\Schema\Column;
+use Marko\Database\Schema\Index;
 use Marko\Database\Schema\Table;
 use ReflectionClass;
 
@@ -90,5 +91,33 @@ describe('SchemaDiff', function (): void {
             ],
         );
         expect($diffWithDestructiveAlter->hasDestructiveChanges())->toBeTrue();
+    });
+
+    it('keeps only the destructive changes in destructiveOnly()', function (): void {
+        $diff = new SchemaDiff(
+            tablesToCreate: [new Table(name: 'new', columns: [])],
+            tablesToDrop: [new Table(name: 'old', columns: [])],
+            tablesToAlter: [
+                'posts' => new TableDiff(
+                    tableName: 'posts',
+                    columnsToAdd: [new Column(name: 'slug', type: 'VARCHAR')],
+                    columnsToDrop: [new Column(name: 'old_col', type: 'VARCHAR')],
+                    indexesToDrop: [new Index(name: 'posts_old_idx', columns: ['old_col'])],
+                ),
+                'tags' => new TableDiff(
+                    tableName: 'tags',
+                    columnsToAdd: [new Column(name: 'name', type: 'VARCHAR')],
+                ),
+            ],
+        );
+
+        $destructive = $diff->destructiveOnly();
+
+        expect($destructive->tablesToCreate)->toBe([])
+            ->and($destructive->tablesToDrop)->toHaveCount(1)
+            ->and(array_keys($destructive->tablesToAlter))->toBe(['posts'])
+            ->and($destructive->tablesToAlter['posts']->columnsToAdd)->toBe([])
+            ->and($destructive->tablesToAlter['posts']->columnsToDrop)->toHaveCount(1)
+            ->and($destructive->tablesToAlter['posts']->indexesToDrop)->toHaveCount(1);
     });
 });

@@ -24,6 +24,7 @@ use Marko\Database\Tests\Schema\Fixtures\ProductEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductFkExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductIndexExtenderEntity;
+use Marko\Database\Tests\Schema\Fixtures\ProductPartialIndexExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductSecondExtenderEntity;
 
 beforeEach(function (): void {
@@ -219,6 +220,23 @@ it('merges extender indexes into the parent table', function (): void {
 
     expect($table->indexes)->toHaveCount(1)
         ->and($table->indexes[0]->name)->toBe('idx_products_sku');
+});
+
+it('keeps the where predicate on indexes merged from extenders', function (): void {
+    $this->registry->registerEntities([ProductEntity::class, ProductPartialIndexExtenderEntity::class]);
+
+    $table = $this->registry->getTable('products');
+
+    expect($table->indexes)->toHaveCount(1)
+        ->and($table->indexes[0]->where)->toBe('sku IS NOT NULL');
+});
+
+it('merges unmanagedIndexes declared on an extender into the parent table', function (): void {
+    $this->registry->registerEntities([ProductEntity::class, ProductPartialIndexExtenderEntity::class]);
+
+    $table = $this->registry->getTable('products');
+
+    expect($table->unmanagedIndexes)->toBe(['products_search_gin_idx']);
 });
 
 it('preserves the parent primary key in the merged table', function (): void {

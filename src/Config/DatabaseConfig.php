@@ -36,6 +36,13 @@ readonly class DatabaseConfig
     public ?string $sslKey;
 
     /**
+     * Index names or fnmatch patterns that db:migrate never drops (migrations.ignore_indexes).
+     *
+     * @var list<string>
+     */
+    public array $ignoreIndexes;
+
+    /**
      * @throws ConfigurationException
      */
     public function __construct(
@@ -62,6 +69,7 @@ readonly class DatabaseConfig
         $this->sslVerifyServerCert = $config['ssl_verify_server_cert'] ?? ($config['ssl_ca'] ?? null) !== null;
         $this->sslCert = $config['ssl_cert'] ?? null;
         $this->sslKey = $config['ssl_key'] ?? null;
+        $this->ignoreIndexes = array_values($config['migrations']['ignore_indexes'] ?? []);
     }
 
     /**
@@ -89,6 +97,7 @@ readonly class DatabaseConfig
             'sslVerifyServerCert' => $config['ssl_verify_server_cert'] ?? ($config['ssl_ca'] ?? null) !== null,
             'sslCert' => $config['ssl_cert'] ?? null,
             'sslKey' => $config['ssl_key'] ?? null,
+            'ignoreIndexes' => array_values($config['migrations']['ignore_indexes'] ?? []),
         ];
 
         $reflection = new ReflectionClass($instance);
@@ -127,6 +136,15 @@ readonly class DatabaseConfig
 
         if ($sslKey !== null && $sslCert === null) {
             throw ConfigurationException::incompleteSslKeyPair('ssl_key', 'ssl_cert');
+        }
+
+        $ignoreIndexes = $config['migrations']['ignore_indexes'] ?? [];
+
+        $isListOfStrings = is_array($ignoreIndexes)
+            && array_all($ignoreIndexes, static fn (mixed $name): bool => is_string($name));
+
+        if (!$isListOfStrings) {
+            throw ConfigurationException::invalidIgnoreIndexes();
         }
     }
 }

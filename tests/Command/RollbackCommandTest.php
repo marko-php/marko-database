@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Database\Command\RollbackCommand;
 use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
@@ -91,7 +92,7 @@ it('blocks execution in production environment', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: true,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'production']),
     );
 
     ['output' => $output] = Helpers::createOutputStream();
@@ -110,7 +111,7 @@ it('shows error message when blocked in production', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: true,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'production']),
     );
 
     ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
@@ -131,7 +132,7 @@ it('does NOT support --force flag (rollback is never allowed in production)', fu
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: true,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'production']),
     );
 
     ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
@@ -158,7 +159,7 @@ it('rolls back last batch of migrations in development', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['output' => $output] = Helpers::createOutputStream();
@@ -188,7 +189,7 @@ it('executes down() in reverse order within batch', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['output' => $output] = Helpers::createOutputStream();
@@ -214,7 +215,7 @@ it('shows each migration being rolled back', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
@@ -238,7 +239,7 @@ it('removes migration records from tracking table', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['output' => $output] = Helpers::createOutputStream();
@@ -261,7 +262,7 @@ it('supports --step option to rollback multiple batches', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['output' => $output] = Helpers::createOutputStream();
@@ -288,7 +289,7 @@ it('accepts --step 2 as well as --step=2 for db:rollback', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['output' => $output] = Helpers::createOutputStream();
@@ -306,7 +307,7 @@ it('offers to delete uncommitted migration files', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
@@ -325,7 +326,7 @@ it('shows "Nothing to rollback" when no applied migrations', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
@@ -345,7 +346,7 @@ it('warns about entity sync after rollback', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
@@ -367,7 +368,7 @@ it('returns 0 on success, 1 on failure', function (): void {
 
     $command = new RollbackCommand(
         migrator: $migrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['output' => $output] = Helpers::createOutputStream();
@@ -386,7 +387,7 @@ it('returns 0 on success, 1 on failure', function (): void {
 
     $failingCommand = new RollbackCommand(
         migrator: $failingMigrator,
-        isProduction: false,
+        appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
     );
 
     ['output' => $output2] = Helpers::createOutputStream();

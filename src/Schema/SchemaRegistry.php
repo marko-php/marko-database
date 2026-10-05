@@ -174,6 +174,10 @@ class SchemaRegistry
                     ) as $fk) {
                         $table = $table->withForeignKey($fk);
                     }
+
+                    if ($extenderMetadata->unmanagedIndexes !== []) {
+                        $table = $table->withUnmanagedIndexes($extenderMetadata->unmanagedIndexes);
+                    }
                 }
 
                 // Update factory cache with linked extenders
@@ -285,6 +289,7 @@ class SchemaRegistry
             name: $idx->name,
             columns: $idx->columns,
             type: $idx->unique ? IndexType::Unique : IndexType::Btree,
+            where: $idx->where,
         );
     }
 }

@@ -49,6 +49,19 @@ readonly class TableDiff
     }
 
     /**
+     * A diff holding only this table's drops.
+     */
+    public function destructiveOnly(): self
+    {
+        return new self(
+            tableName: $this->tableName,
+            columnsToDrop: $this->columnsToDrop,
+            indexesToDrop: $this->indexesToDrop,
+            foreignKeysToDrop: $this->foreignKeysToDrop,
+        );
+    }
+
+    /**
      * @return array<string>
      */
     public function getDestructiveChanges(): array

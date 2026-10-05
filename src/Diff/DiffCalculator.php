@@ -13,6 +13,13 @@ use Marko\Database\Schema\Table;
 class DiffCalculator
 {
     /**
+     * @param list<string> $ignoredIndexes Project-wide index names or fnmatch patterns the diff never drops
+     */
+    public function __construct(
+        private array $ignoredIndexes = [],
+    ) {}
+
+    /**
      * Calculate the difference between entity-defined schema and database state.
      *
      * @param array<string, Table> $entitySchema Tables defined by entities
@@ -74,6 +81,7 @@ class DiffCalculator
                 $entityTable->indexes,
                 $databaseTable->indexes,
                 $entityTable->columns,
+                $entityTable->unmanagedIndexes,
             ),
             foreignKeysToAdd: $this->findForeignKeysToAdd($entityTable->foreignKeys, $databaseTable->foreignKeys),
             foreignKeysToDrop: $this->findForeignKeysToDrop($entityTable->foreignKeys, $databaseTable->foreignKeys),
@@ -240,12 +248,14 @@ class DiffCalculator
      * @param array<Index> $entityIndexes
      * @param array<Index> $databaseIndexes
      * @param array<Column> $entityColumns Entity columns (to check unique and FK properties)
+     * @param list<string> $unmanagedIndexes Index names or patterns declared unmanaged on the entity table
      * @return array<Index>
      */
     private function findIndexesToDrop(
         array $entityIndexes,
         array $databaseIndexes,
         array $entityColumns = [],
+        array $unmanagedIndexes = [],
     ): array {
         $entityIndexNames = $this->getIndexNames($entityIndexes);
         $indexesToDrop = [];
@@ -266,6 +276,10 @@ class DiffCalculator
         foreach ($databaseIndexes as $index) {
             if (in_array($index->name, $entityIndexNames, true)) {
                 continue;  // Index exists in entity, don't drop
+            }
+
+            if ($this->isIgnoredIndex($index->name, $unmanagedIndexes)) {
+                continue;  // Created by hand and opted out of the diff
             }
 
             // Don't drop unique indexes that correspond to columns with unique=true
@@ -292,6 +306,21 @@ class DiffCalculator
         }
 
         return $indexesToDrop;
+    }
+
+    /**
+     * Whether an index was opted out of the diff, per table or project-wide.
+     *
+     * @param list<string> $unmanagedIndexes
+     */
+    private function isIgnoredIndex(
+        string $indexName,
+        array $unmanagedIndexes,
+    ): bool {
+        return array_any(
+            [...$unmanagedIndexes, ...$this->ignoredIndexes],
+            static fn (string $pattern): bool => fnmatch($pattern, $indexName),
+        );
     }
 
     /**

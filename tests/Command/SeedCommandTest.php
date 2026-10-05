@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Command\SeedCommand;
 use Marko\Database\Seed\SeederDefinition;
@@ -73,20 +74,21 @@ function createNoOpSeeder(): SeederInterface
 function createSeedCommand(
     array $definitions = [],
     array $seeders = [],
-    bool $isProduction = false,
+    ?string $appEnv = 'local',
 ): SeedCommand {
+    $appEnvironment = new AppEnvironment($appEnv === null ? [] : ['APP_ENV' => $appEnv]);
     $discovery = createStubDiscovery(vendorDefinitions: $definitions);
 
     $runner = new SeederRunner(
         seeders: $seeders,
-        isProduction: $isProduction,
+        appEnvironment: $appEnvironment,
     );
 
     return new SeedCommand(
         discovery: $discovery,
         runner: $runner,
         paths: new ProjectPaths('/test'),
-        isProduction: $isProduction,
+        appEnvironment: $appEnvironment,
     );
 }
 
@@ -281,12 +283,27 @@ it('blocks execution in production environment', function (): void {
     $command = createSeedCommand(
         definitions: $definitions,
         seeders: [get_class($seeder) => $seeder],
-        isProduction: true,
+        appEnv: 'production',
     );
 
     ['exitCode' => $exitCode] = executeSeedCommand($command);
 
     expect($exitCode)->toBe(1);
+});
+
+it('refuses to seed and exits 1 when APP_ENV is unset', function (): void {
+    $seeder = createNoOpSeeder();
+
+    $command = createSeedCommand(
+        definitions: [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 10)],
+        seeders: [get_class($seeder) => $seeder],
+        appEnv: null,
+    );
+
+    ['output' => $output, 'exitCode' => $exitCode] = executeSeedCommand($command);
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toContain('cannot be run in production');
 });
 
 it('shows error message when blocked in production', function (): void {
@@ -299,7 +316,7 @@ it('shows error message when blocked in production', function (): void {
     $command = createSeedCommand(
         definitions: $definitions,
         seeders: [get_class($seeder) => $seeder],
-        isProduction: true,
+        appEnv: 'production',
     );
 
     ['output' => $output] = executeSeedCommand($command);
@@ -317,7 +334,7 @@ it('does NOT support --force flag (seeders never run in production)', function (
     $command = createSeedCommand(
         definitions: $definitions,
         seeders: [get_class($seeder) => $seeder],
-        isProduction: true,
+        appEnv: 'production',
     );
 
     // Even with --force, it should still block

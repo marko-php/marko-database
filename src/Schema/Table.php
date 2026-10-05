@@ -10,12 +10,14 @@ readonly class Table
      * @param array<Column> $columns
      * @param array<Index> $indexes
      * @param array<ForeignKey> $foreignKeys
+     * @param list<string> $unmanagedIndexes Index names (or fnmatch patterns) the entity diff never drops
      */
     public function __construct(
         public string $name,
         public array $columns = [],
         public array $indexes = [],
         public array $foreignKeys = [],
+        public array $unmanagedIndexes = [],
     ) {}
 
     public function withColumn(
@@ -26,6 +28,7 @@ readonly class Table
             columns: [...$this->columns, $column],
             indexes: $this->indexes,
             foreignKeys: $this->foreignKeys,
+            unmanagedIndexes: $this->unmanagedIndexes,
         );
     }
 
@@ -37,6 +40,7 @@ readonly class Table
             columns: $this->columns,
             indexes: [...$this->indexes, $index],
             foreignKeys: $this->foreignKeys,
+            unmanagedIndexes: $this->unmanagedIndexes,
         );
     }
 
@@ -48,6 +52,22 @@ readonly class Table
             columns: $this->columns,
             indexes: $this->indexes,
             foreignKeys: [...$this->foreignKeys, $foreignKey],
+            unmanagedIndexes: $this->unmanagedIndexes,
+        );
+    }
+
+    /**
+     * @param list<string> $unmanagedIndexes
+     */
+    public function withUnmanagedIndexes(
+        array $unmanagedIndexes,
+    ): self {
+        return new self(
+            name: $this->name,
+            columns: $this->columns,
+            indexes: $this->indexes,
+            foreignKeys: $this->foreignKeys,
+            unmanagedIndexes: array_values(array_unique([...$this->unmanagedIndexes, ...$unmanagedIndexes])),
         );
     }
 
