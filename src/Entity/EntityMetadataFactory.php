@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Marko\Database\Entity;
 
 use BackedEnum;
+use Marko\Core\Container\ContainerInterface;
 use Marko\Database\Attributes\BelongsTo;
 use Marko\Database\Attributes\BelongsToMany;
 use Marko\Database\Attributes\Cast;
 use Marko\Database\Attributes\Column;
+use Marko\Database\Attributes\Encrypted;
 use Marko\Database\Attributes\HasMany;
 use Marko\Database\Attributes\HasOne;
 use Marko\Database\Attributes\Index;
@@ -16,6 +18,7 @@ use Marko\Database\Attributes\Table;
 use Marko\Database\Entity\Cast\CastInterface;
 use Marko\Database\Exceptions\EntityException;
 use Marko\Database\Exceptions\MissingPrimaryKeyException;
+use Marko\Encryption\Contracts\EncryptorInterface;
 use ReflectionClass;
 use ReflectionException;
 use ReflectionNamedType;
@@ -42,6 +45,10 @@ class EntityMetadataFactory
      * @var array<class-string, EntityMetadata>
      */
     private array $cache = [];
+
+    public function __construct(
+        private readonly ?ContainerInterface $container = null,
+    ) {}
 
     /**
      * Parse an entity class and return its metadata.
@@ -134,6 +141,13 @@ class EntityMetadataFactory
                 }
             }
 
+            $encrypted = $property->getAttributes(Encrypted::class) !== [];
+
+            if ($encrypted) {
+                $this->validateEncryptedProperty($entityClass, $propertyName, $columnAttr, $castClass !== null);
+                $dbType = 'text';
+            }
+
             if ($castClass === null && $columnAttr->type === 'json' && $phpType !== 'array') {
                 throw EntityException::jsonColumnTypeMismatch($entityClass, $propertyName, $phpType);
             }
@@ -186,6 +200,7 @@ class EntityMetadataFactory
                 default: $columnAttr->default ?? $default,
                 columnType: $columnAttr->type,
                 castClass: $castClass,
+                encrypted: $encrypted,
             );
         }
 
@@ -200,6 +215,14 @@ class EntityMetadataFactory
         $indexAttributes = $reflection->getAttributes(Index::class);
         foreach ($indexAttributes as $indexAttr) {
             $index = $indexAttr->newInstance();
+            foreach ($properties as $propertyName => $propertyMetadata) {
+                if ($propertyMetadata->encrypted
+                    && (in_array($propertyMetadata->columnName, $index->columns, true)
+                        || in_array($propertyName, $index->columns, true))
+                ) {
+                    throw EntityException::encryptedUniqueOrIndexed($entityClass, $propertyName);
+                }
+            }
             $indexes[] = new IndexMetadata(
                 name: $index->name,
                 columns: $index->columns,
@@ -221,6 +244,54 @@ class EntityMetadataFactory
         $this->cache[$entityClass] = $metadata;
 
         return $metadata;
+    }
+
+    /**
+     * Validate an #[Encrypted] property at parse time. Never instantiates the encryptor.
+     *
+     * @param class-string $entityClass
+     *
+     * @throws EntityException
+     */
+    private function validateEncryptedProperty(
+        string $entityClass,
+        string $propertyName,
+        Column $columnAttr,
+        bool $hasCast,
+    ): void {
+        if ($hasCast) {
+            throw EntityException::castAndEncryptedConflict($entityClass, $propertyName);
+        }
+
+        if ($columnAttr->primaryKey) {
+            throw EntityException::encryptedPrimaryKey($entityClass, $propertyName);
+        }
+
+        if ($columnAttr->unique) {
+            throw EntityException::encryptedUniqueOrIndexed($entityClass, $propertyName);
+        }
+
+        if ($columnAttr->type !== null && $columnAttr->type !== 'text') {
+            throw EntityException::encryptedColumnTypeMismatch($entityClass, $propertyName, $columnAttr->type);
+        }
+
+        if (!interface_exists(EncryptorInterface::class)) {
+            throw EntityException::encryptionNotInstalled($entityClass, $propertyName);
+        }
+
+        if (!$this->hasEncryptor()) {
+            throw EntityException::encryptorNotBound($entityClass, $propertyName);
+        }
+    }
+
+    /**
+     * Whether an encryptor is bound (bind()) or registered (instance()) in the container.
+     */
+    private function hasEncryptor(): bool
+    {
+        return $this->container !== null
+            && ($this->container->has(EncryptorInterface::class)
+                || $this->container->resolvedInstances(EncryptorInterface::class) !== []);
     }
 
     /**

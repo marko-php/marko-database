@@ -8,9 +8,13 @@
         "marko/core": "self.version"
     },
     "require-dev": {
+        "marko/encryption": "self.version",
         "marko/routing": "self.version",
         "marko/testing": "self.version",
         "pestphp/pest": "^4.0"
+    },
+    "suggest": {
+        "marko/encryption": "Required for #[Encrypted] columns (install a driver such as marko/encryption-openssl)"
     },
     "autoload": {
         "psr-4": {

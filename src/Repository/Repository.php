@@ -20,6 +20,7 @@ use Marko\Database\Events\EntityDeleting;
 use Marko\Database\Events\EntityUpdated;
 use Marko\Database\Events\EntityUpdating;
 use Marko\Database\Exceptions\BatchInsertException;
+use Marko\Database\Exceptions\EntityException;
 use Marko\Database\Exceptions\EntityNotFoundException;
 use Marko\Database\Exceptions\RepositoryException;
 use Marko\Database\Query\QueryBuilderFactoryInterface;
@@ -630,6 +631,10 @@ abstract class Repository implements RepositoryInterface
         mixed $value,
     ): mixed {
         $propertyMetadata = $this->metadata->properties[$property] ?? null;
+
+        if ($propertyMetadata?->encrypted === true) {
+            throw EntityException::encryptedCriteria($this->metadata->entityClass, (string) $property);
+        }
 
         return $propertyMetadata !== null
             ? $this->hydrator->toDatabaseValue($value, $propertyMetadata)

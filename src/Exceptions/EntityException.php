@@ -538,4 +538,49 @@ class EntityException extends MarkoException
             suggestion: 'Declare #[Timestamps] on the parent entity that owns the table',
         );
     }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function encryptedUniqueOrIndexed(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Encrypted property '$property' on entity '$entityClass' is part of a unique column or an #[Index]",
+            context: "Parsing column metadata for '$entityClass::\$$property'",
+            suggestion: 'Ciphertext is non-deterministic, so unique constraints and indexes on it are meaningless. Remove unique/#[Index] or #[Encrypted]',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function decryptionFailed(
+        string $entityClass,
+        string $property,
+        string $column,
+        Throwable $previous,
+    ): self {
+        return new self(
+            message: "Failed to decrypt property '$property' (column '$column') on entity '$entityClass': {$previous->getMessage()}",
+            context: "Hydrating '$entityClass::\$$property' from column '$column'",
+            suggestion: 'Check that the encryption key matches the one used to write the data and that the column has not been modified',
+            previous: $previous,
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function encryptedCriteria(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Cannot query by encrypted property '$property' on entity '$entityClass'",
+            context: "Building findBy/findOneBy/existsBy criteria for '$entityClass'",
+            suggestion: 'Encrypted values are non-deterministic and cannot be matched in SQL. Query by another column and compare after hydration',
+        );
+    }
 }

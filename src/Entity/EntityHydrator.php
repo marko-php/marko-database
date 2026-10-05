@@ -15,6 +15,7 @@ use Marko\Database\Entity\Cast\EquatableCastInterface;
 use Marko\Database\Entity\Cast\JsonCast;
 use Marko\Database\Entity\Cast\ScalarCast;
 use Marko\Database\Exceptions\EntityException;
+use Marko\Encryption\Exceptions\EncryptionException;
 use ReflectionClass;
 use WeakMap;
 
@@ -78,7 +79,12 @@ class EntityHydrator
             }
 
             $dbValue = $row[$columnName];
-            $phpValue = $this->toPhpValue($dbValue, $propMeta);
+
+            try {
+                $phpValue = $this->toPhpValue($dbValue, $propMeta);
+            } catch (EncryptionException $e) {
+                throw EntityException::decryptionFailed($entityClass, $propName, $columnName, $e);
+            }
 
             $property = $reflection->getProperty($propName);
             $property->setValue($entity, $phpValue);
