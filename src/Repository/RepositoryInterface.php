@@ -7,6 +7,7 @@ namespace Marko\Database\Repository;
 use Marko\Database\Entity\Entity;
 use Marko\Database\Entity\EntityCollection;
 use Marko\Database\Exceptions\BatchInsertException;
+use Marko\Database\Exceptions\EntityNotFoundException;
 use Marko\Database\Exceptions\RepositoryException;
 
 /**
@@ -27,7 +28,7 @@ interface RepositoryInterface
      * Find an entity by its primary key or throw an exception.
      *
      * @return TEntity The entity
-     * @throws RepositoryException When entity is not found
+     * @throws EntityNotFoundException When entity is not found
      */
     public function findOrFail(int|string $id): Entity;
 

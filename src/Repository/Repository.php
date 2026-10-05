@@ -22,6 +22,7 @@ use Marko\Database\Events\EntityDeleting;
 use Marko\Database\Events\EntityUpdated;
 use Marko\Database\Events\EntityUpdating;
 use Marko\Database\Exceptions\BatchInsertException;
+use Marko\Database\Exceptions\EntityNotFoundException;
 use Marko\Database\Exceptions\RepositoryException;
 use Marko\Database\Query\QueryBuilderFactoryInterface;
 use Marko\Database\Query\QueryBuilderInterface;
@@ -145,7 +146,7 @@ abstract class Repository implements RepositoryInterface
      * Find an entity by its primary key or throw an exception.
      *
      * @return TEntity
-     * @throws RepositoryException When entity is not found
+     * @throws EntityNotFoundException When entity is not found
      */
     public function findOrFail(
         int|string $id,

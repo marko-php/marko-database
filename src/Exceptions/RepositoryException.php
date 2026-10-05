@@ -30,8 +30,10 @@ class RepositoryException extends MarkoException
     public static function entityNotFound(
         string $entityClass,
         int|string $id,
-    ): self {
-        return new self(
+    ): EntityNotFoundException {
+        return new EntityNotFoundException(
+            entityClass: $entityClass,
+            id: $id,
             message: "Entity '$entityClass' with ID $id not found",
             context: 'Attempting to retrieve entity by ID',
             suggestion: 'Verify the entity exists before attempting to fetch it',
