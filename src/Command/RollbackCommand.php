@@ -82,14 +82,8 @@ readonly class RollbackCommand implements CommandInterface
     private function parseStepOption(
         Input $input,
     ): int {
-        foreach ($input->getArguments() as $arg) {
-            if (str_starts_with($arg, '--step=')) {
-                $value = (int) substr($arg, 7);
+        $step = $input->getOption('step');
 
-                return max(1, $value);
-            }
-        }
-
-        return 1;
+        return $step === null ? 1 : max(1, (int) $step);
     }
 }

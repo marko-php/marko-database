@@ -343,6 +343,12 @@ it('registers as db:migrate command via #[Command] attribute', function (): void
         ->and($attributes[0]->newInstance()->name)->toBe('db:migrate');
 });
 
+it('declares no-generate, verbose and v as flags', function (): void {
+    $attribute = new ReflectionClass(MigrateCommand::class)->getAttributes(Command::class)[0]->newInstance();
+
+    expect($attribute->flags)->toBe(['no-generate', 'verbose', 'v']);
+});
+
 it('implements CommandInterface', function (): void {
     $reflection = new ReflectionClass(MigrateCommand::class);
 

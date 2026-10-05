@@ -69,13 +69,7 @@ readonly class SeedCommand implements CommandInterface
     private function parseClassOption(
         Input $input,
     ): ?string {
-        foreach ($input->getArguments() as $arg) {
-            if (str_starts_with($arg, '--class=')) {
-                return substr($arg, 8);
-            }
-        }
-
-        return null;
+        return $input->getOption('class');
     }
 
     /**

@@ -276,6 +276,29 @@ it('supports --step option to rollback multiple batches', function (): void {
         ]);
 });
 
+it('accepts --step 2 as well as --step=2 for db:rollback', function (): void {
+    /** @var Migrator&object{rolledBack: array<string>, rollbackCallCount: int} $migrator */
+    $migrator = createStubMigrator(
+        batchesMigrations: [
+            ['2024_01_03_000000_third'],
+            ['2024_01_02_000000_second'],
+            ['2024_01_01_000000_first'],
+        ],
+    );
+
+    $command = new RollbackCommand(
+        migrator: $migrator,
+        isProduction: false,
+    );
+
+    ['output' => $output] = Helpers::createOutputStream();
+    $input = new Input(['marko', 'db:rollback', '--step', '2']);
+
+    $command->execute($input, $output);
+
+    expect($migrator->rollbackCallCount)->toBe(2);
+});
+
 it('offers to delete uncommitted migration files', function (): void {
     $migrator = createStubMigrator(
         lastBatchMigrations: ['2024_01_01_000000_test'],

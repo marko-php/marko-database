@@ -258,6 +258,19 @@ it('supports --class option to run specific seeder', function (): void {
         ->and($postSeederRan)->toBeFalse();
 });
 
+it('accepts --class Name as well as --class=Name for db:seed', function (): void {
+    $seeder = createNoOpSeeder();
+
+    $command = createSeedCommand(
+        definitions: [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 10)],
+        seeders: [get_class($seeder) => $seeder],
+    );
+
+    ['output' => $output] = executeSeedCommand($command, ['marko', 'db:seed', '--class', 'users']);
+
+    expect($output)->toContain('Running seeder: users');
+});
+
 it('blocks execution in production environment', function (): void {
     $seeder = createNoOpSeeder();
 

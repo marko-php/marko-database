@@ -23,7 +23,7 @@ use Marko\Database\Schema\SchemaRegistry;
 use Marko\Database\Schema\Table;
 
 /** @noinspection PhpUnused */
-#[Command(name: 'db:migrate', description: 'Apply database migrations')]
+#[Command(name: 'db:migrate', description: 'Apply database migrations', flags: ['no-generate', 'verbose', 'v'])]
 readonly class MigrateCommand implements CommandInterface
 {
     public function __construct(
@@ -47,7 +47,7 @@ readonly class MigrateCommand implements CommandInterface
         Output $output,
     ): int {
         $verbose = $this->isVerbose($input);
-        $noGenerate = $this->hasFlag($input, '--no-generate');
+        $noGenerate = $input->hasOption('no-generate');
 
         // Get pending migrations
         $schemaPending = $this->migrator->getPending();
@@ -292,16 +292,6 @@ readonly class MigrateCommand implements CommandInterface
     private function isVerbose(
         Input $input,
     ): bool {
-        return $this->hasFlag($input, '--verbose') || $this->hasFlag($input, '-v');
-    }
-
-    /**
-     * Check if a flag is present in the input arguments.
-     */
-    private function hasFlag(
-        Input $input,
-        string $flag,
-    ): bool {
-        return array_any($input->getArguments(), fn ($arg) => $arg === $flag);
+        return $input->hasOption('verbose') || $input->hasOption('v');
     }
 }
