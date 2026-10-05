@@ -6,6 +6,7 @@ use Marko\Core\Container\ContainerInterface;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Connection\TransactionInterface;
 use Marko\Database\Entity\EntityDiscovery;
+use Marko\Database\Entity\EntityHydrator;
 use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Seed\SeederDiscovery;
 use Marko\Database\Seed\SeederDiscoveryInterface;
@@ -14,6 +15,9 @@ use Marko\Database\Seed\SeederRunner;
 return [
     'singletons' => [
         EntityMetadataFactory::class,
+        // Shared so the dirty-check snapshot taken when one repository loads an
+        // entity is still there when another repository or service saves it.
+        EntityHydrator::class,
     ],
     'boot' => function (
         EntityDiscovery $discovery,
