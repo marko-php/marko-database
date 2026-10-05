@@ -130,7 +130,12 @@ class EntityHydrator
                     }
 
                     $dbValue = $row[$columnName];
-                    $phpValue = $this->toPhpValue($dbValue, $propMeta);
+
+                    try {
+                        $phpValue = $this->toPhpValue($dbValue, $propMeta);
+                    } catch (EncryptionException $e) {
+                        throw EntityException::decryptionFailed($extenderClass, $propName, $columnName, $e);
+                    }
 
                     if ($phpValue === null && !$propMeta->nullable) {
                         continue;
@@ -159,6 +164,8 @@ class EntityHydrator
      * Extract entity data to a row array for persistence.
      *
      * @return array<string, mixed> Column name => value
+     *
+     * @throws EntityException
      */
     public function extract(
         Entity $entity,
@@ -246,6 +253,8 @@ class EntityHydrator
      *
      * Enables dirty-checking for entities that never passed through hydrate(),
      * such as freshly inserted entities. Idempotent — overwrites any prior snapshot.
+     *
+     * @throws EntityException
      */
     public function registerOriginalValues(
         Entity $entity,
@@ -299,6 +308,8 @@ class EntityHydrator
 
     /**
      * Check if the entity has any changed properties.
+     *
+     * @throws EntityException
      */
     public function isDirty(
         Entity $entity,
@@ -311,6 +322,8 @@ class EntityHydrator
      * Get the list of property names that have changed.
      *
      * @return array<string>
+     *
+     * @throws EntityException
      */
     public function getDirtyProperties(
         Entity $entity,
@@ -336,7 +349,12 @@ class EntityHydrator
             $originalValue = $originalValues[$propName];
 
             $changed = array_key_exists($propName, $originalDatabaseValues)
-                ? !$this->trackedValueUnchanged($propMeta, $currentValue, $originalValue, $originalDatabaseValues[$propName])
+                ? !$this->trackedValueUnchanged(
+                    $propMeta,
+                    $currentValue,
+                    $originalValue,
+                    $originalDatabaseValues[$propName],
+                )
                 : !$this->valuesEqual($propMeta, $currentValue, $originalValue);
 
             if ($changed) {
@@ -352,7 +370,7 @@ class EntityHydrator
      *
      * This is the single read path: every hydrated value goes through here.
      *
-     * @throws EntityException
+     * @throws EntityException|EncryptionException
      */
     public function toPhpValue(
         mixed $value,
@@ -376,7 +394,7 @@ class EntityHydrator
      *
      * This is the single write path: inserts, batch inserts and updates all go through here.
      *
-     * @throws EntityException
+     * @throws EntityException|EncryptionException
      */
     public function toDatabaseValue(
         mixed $value,

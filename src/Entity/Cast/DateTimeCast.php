@@ -18,7 +18,7 @@ use Marko\Database\Entity\PropertyMetadata;
  * default UTC) before formatting, and read back in that timezone, so the stored
  * instant never depends on the PHP default timezone.
  */
-class DateTimeCast implements EquatableCastInterface
+readonly class DateTimeCast implements EquatableCastInterface
 {
     private const string FORMAT = 'Y-m-d H:i:s';
 

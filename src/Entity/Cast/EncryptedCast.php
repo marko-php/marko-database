@@ -17,10 +17,10 @@ use Marko\Encryption\Exceptions\EncryptionException;
  * normal conversion runs. Requires marko/encryption and a bound EncryptorInterface
  * (for example marko/encryption-openssl).
  */
-class EncryptedCast implements CastInterface
+readonly class EncryptedCast implements CastInterface
 {
     public function __construct(
-        private readonly EncryptorInterface $encryptor,
+        private EncryptorInterface $encryptor,
     ) {}
 
     /**

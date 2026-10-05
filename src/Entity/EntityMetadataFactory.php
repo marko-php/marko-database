@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Marko\Database\Entity;
 
 use BackedEnum;
+use DateTimeImmutable;
 use Marko\Core\Container\ContainerInterface;
 use Marko\Database\Attributes\BelongsTo;
 use Marko\Database\Attributes\BelongsToMany;
@@ -15,6 +16,7 @@ use Marko\Database\Attributes\HasMany;
 use Marko\Database\Attributes\HasOne;
 use Marko\Database\Attributes\Index;
 use Marko\Database\Attributes\Table;
+use Marko\Database\Attributes\Timestamps;
 use Marko\Database\Entity\Cast\CastInterface;
 use Marko\Database\Exceptions\EntityException;
 use Marko\Database\Exceptions\MissingPrimaryKeyException;
@@ -230,6 +232,13 @@ class EntityMetadataFactory
             );
         }
 
+        [$createdAtProperty, $updatedAtProperty] = $this->resolveTimestamps(
+            $reflection,
+            $entityClass,
+            $isExtender,
+            $properties,
+        );
+
         $metadata = new EntityMetadata(
             entityClass: $entityClass,
             tableName: $tableName,
@@ -239,11 +248,53 @@ class EntityMetadataFactory
             indexes: $indexes,
             relationships: $relationships,
             extends: $tableAttr->extends,
+            createdAtProperty: $createdAtProperty,
+            updatedAtProperty: $updatedAtProperty,
         );
 
         $this->cache[$entityClass] = $metadata;
 
         return $metadata;
+    }
+
+    /**
+     * Resolve and validate #[Timestamps] into [createdAt, updatedAt] property names.
+     *
+     * @param ReflectionClass<object> $reflection
+     * @param array<string, PropertyMetadata> $properties
+     * @return array{0: ?string, 1: ?string}
+     *
+     * @throws EntityException
+     */
+    private function resolveTimestamps(
+        ReflectionClass $reflection,
+        string $entityClass,
+        bool $isExtender,
+        array $properties,
+    ): array {
+        $attributes = $reflection->getAttributes(Timestamps::class);
+
+        if ($attributes === []) {
+            return [null, null];
+        }
+
+        if ($isExtender) {
+            throw EntityException::timestampsOnExtender($entityClass);
+        }
+
+        $timestamps = $attributes[0]->newInstance();
+
+        if ($timestamps->createdAt === null && $timestamps->updatedAt === null) {
+            throw EntityException::timestampsWithoutProperties($entityClass);
+        }
+
+        foreach (['createdAt' => $timestamps->createdAt, 'updatedAt' => $timestamps->updatedAt] as $role => $name) {
+            if ($name !== null && ($properties[$name] ?? null)?->type !== DateTimeImmutable::class) {
+                throw EntityException::invalidTimestampProperty($entityClass, $name, $role);
+            }
+        }
+
+        return [$timestamps->createdAt, $timestamps->updatedAt];
     }
 
     /**

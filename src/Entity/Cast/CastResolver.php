@@ -31,7 +31,7 @@ class CastResolver
     /**
      * @param class-string $castClass
      *
-     * @throws EntityException
+     * @throws EntityException|ReflectionException
      */
     public function resolve(
         string $castClass,

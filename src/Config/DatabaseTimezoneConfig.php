@@ -9,6 +9,7 @@ use Exception;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Exceptions\ConfigurationException;
 use ReflectionClass;
+use ReflectionException;
 use ReflectionProperty;
 
 /**
@@ -40,7 +41,7 @@ readonly class DatabaseTimezoneConfig
     /**
      * Build the config for an explicit timezone name, without reading config files.
      *
-     * @throws ConfigurationException
+     * @throws ConfigurationException|ReflectionException
      */
     public static function fromName(
         string $name,

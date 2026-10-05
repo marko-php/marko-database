@@ -202,7 +202,7 @@ it('round-trips a custom cast through hydrate, insert, update and hydrate', func
 });
 
 it('does not mark an unchanged value-object property dirty', function (): void {
-    $repository = castThingRepository($connection = castThingConnection());
+    $repository = castThingRepository(castThingConnection());
     $thing = new CastThing();
     $thing->price = new Money(1250, 'USD');
     $repository->save($thing);
@@ -212,7 +212,7 @@ it('does not mark an unchanged value-object property dirty', function (): void {
     $loaded = $hydrator->hydrate(CastThing::class, ['id' => 1, 'price' => '1250:USD'], $metadata);
     $loaded->price = new Money(1250, 'USD');
 
-    expect($hydrator->getDirtyProperties($loaded, $metadata))->toBe([]);
+    expect($hydrator->getDirtyProperties($loaded, $metadata))->toBeEmpty();
 });
 
 it('marks a value-object property dirty when its database representation changes', function (): void {
@@ -232,7 +232,7 @@ it('uses the cast equals hook when the cast implements EquatableCastInterface', 
 
     $loaded->looseBox = new MutableBox('HELLO');
 
-    expect($hydrator->getDirtyProperties($loaded, $metadata))->toBe([])
+    expect($hydrator->getDirtyProperties($loaded, $metadata))->toBeEmpty()
         ->and(CaseInsensitiveBoxCast::$equalsCalls)->toBeGreaterThan(0);
 
     $loaded->looseBox = new MutableBox('other');
@@ -245,7 +245,7 @@ it('detects an in-place mutation of a mutable value object as dirty', function (
     $metadata = new EntityMetadataFactory()->parse(CastThing::class);
     $loaded = $hydrator->hydrate(CastThing::class, ['id' => 1, 'box' => 'first'], $metadata);
 
-    expect($hydrator->getDirtyProperties($loaded, $metadata))->toBe([]);
+    expect($hydrator->getDirtyProperties($loaded, $metadata))->toBeEmpty();
 
     $loaded->box->label = 'second';
 
@@ -292,7 +292,7 @@ it('allows a json column type on a cast property with a non-array PHP type', fun
         ->and($loaded->jsonPrice->cents)->toBe(42);
 });
 
-it('converts findBy, findOneBy and existsBy criteria for cast properties through the pipeline', function (): void {
+it('converts query criteria for cast properties through the pipeline', function (): void {
     $connection = castThingConnection();
     $repository = castThingRepository($connection);
 

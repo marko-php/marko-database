@@ -39,7 +39,7 @@ class PrefixDependency
     public string $prefix = 'dep:';
 }
 
-class DependentCast implements CastInterface
+readonly class DependentCast implements CastInterface
 {
     public function __construct(
         public PrefixDependency $dependency,

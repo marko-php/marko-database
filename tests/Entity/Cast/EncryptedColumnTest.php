@@ -300,11 +300,11 @@ it('does not mark an unchanged encrypted property dirty', function (): void {
 
     $loaded = $repository->find($record->id);
     $container = encryptedContainer();
-    $hydrator = new EntityHydrator(null, new CastResolver($container));
+    $hydrator = new EntityHydrator(castResolver: new CastResolver($container));
     $metadata = new EntityMetadataFactory($container)->parse(SecretRecord::class);
     $fresh = $hydrator->hydrate(SecretRecord::class, $connection->query('SELECT * FROM secret_records')[0], $metadata);
 
-    expect($hydrator->getDirtyProperties($fresh, $metadata))->toBe([]);
+    expect($hydrator->getDirtyProperties($fresh, $metadata))->toBeEmpty();
 
     $fresh->secret = 'changed';
 
@@ -312,10 +312,13 @@ it('does not mark an unchanged encrypted property dirty', function (): void {
         ->and($loaded->secret)->toBe('top-secret');
 });
 
-it('throws when findBy, findOneBy or existsBy criteria target an encrypted property', function (): void {
+it('throws when query criteria target an encrypted property', function (): void {
     $repository = encryptedRepository(encryptedConnection());
 
-    expect(fn () => $repository->findBy(['secret' => 'x']))->toThrow(EntityException::class, 'encrypted property')
-        ->and(fn () => $repository->findOneBy(['secret' => 'x']))->toThrow(EntityException::class, 'encrypted property')
-        ->and(fn () => $repository->existsBy(['secret' => 'x']))->toThrow(EntityException::class, 'encrypted property');
+    expect(fn () => $repository->findBy(['secret' => 'x']))
+        ->toThrow(EntityException::class, 'encrypted property')
+        ->and(fn () => $repository->findOneBy(['secret' => 'x']))
+        ->toThrow(EntityException::class, 'encrypted property')
+        ->and(fn () => $repository->existsBy(['secret' => 'x']))
+        ->toThrow(EntityException::class, 'encrypted property');
 });

@@ -19,7 +19,7 @@ class RecordingSqliteConnection implements ConnectionInterface
      */
     public array $executed = [];
 
-    private PDO $pdo;
+    private readonly PDO $pdo;
 
     public function __construct()
     {

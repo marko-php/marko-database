@@ -10,7 +10,6 @@ use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Attributes\Column;
 use Marko\Database\Attributes\Table;
 use Marko\Database\Config\DatabaseTimezoneConfig;
-use Marko\Database\Entity\Cast\CastResolver;
 use Marko\Database\Entity\Cast\DateTimeCast;
 use Marko\Database\Entity\Entity;
 use Marko\Database\Entity\EntityHydrator;
@@ -84,13 +83,11 @@ it('uses the configured database timezone', function (): void {
     $config = new DatabaseTimezoneConfig(new ProjectPaths(timezoneConfigDir('America/Chicago')));
     $cast = new DateTimeCast($config);
     $meta = new PropertyMetadata('at', 'at', DateTimeImmutable::class);
-    $hydrator = new EntityHydrator(castResolver: new CastResolver());
 
     $utc = new DateTimeImmutable('2026-01-15 18:00:00', new DateTimeZone('UTC'));
 
     expect($cast->toDatabase($utc, $meta))->toBe('2026-01-15 12:00:00')
-        ->and($cast->toPhp('2026-01-15 12:00:00', $meta)->getTimestamp())->toBe($utc->getTimestamp())
-        ->and($hydrator)->toBeInstanceOf(EntityHydrator::class);
+        ->and($cast->toPhp('2026-01-15 12:00:00', $meta)->getTimestamp())->toBe($utc->getTimestamp());
 });
 
 it('defaults the database timezone to UTC when the config key is absent', function (): void {

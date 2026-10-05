@@ -22,6 +22,8 @@ readonly class EntityMetadata
      * @param array<string, RelationshipMetadata> $relationships Property name => metadata
      * @param ?class-string $extends Parent entity class this entity extends (set on an extender)
      * @param array<class-string> $extenders List of extender classes registered on this entity (set on a parent)
+     * @param ?string $createdAtProperty Property maintained as the creation timestamp via #[Timestamps]
+     * @param ?string $updatedAtProperty Property maintained as the update timestamp via #[Timestamps]
      */
     public function __construct(
         public string $entityClass,
@@ -33,6 +35,8 @@ readonly class EntityMetadata
         public array $relationships = [],
         public ?string $extends = null,
         public array $extenders = [],
+        public ?string $createdAtProperty = null,
+        public ?string $updatedAtProperty = null,
     ) {}
 
     /**
@@ -68,6 +72,8 @@ readonly class EntityMetadata
             relationships: $this->relationships,
             extends: $this->extends,
             extenders: $extenders,
+            createdAtProperty: $this->createdAtProperty,
+            updatedAtProperty: $this->updatedAtProperty,
         );
     }
 
