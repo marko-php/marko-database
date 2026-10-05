@@ -426,4 +426,22 @@ describe('QueryBuilderInterface', function (): void {
                 ->and($returnType->allowsNull())->toBeTrue();
         }
     });
+
+    it('declares lockForUpdate, sharedLock, skipLocked and noWait returning static', function (string $name): void {
+        $method = new ReflectionMethod(QueryBuilderInterface::class, $name);
+
+        expect($method->getParameters())->toBe([])
+            ->and($method->getReturnType()?->getName())->toBe('static');
+    })->with(['lockForUpdate', 'sharedLock', 'skipLocked', 'noWait']);
+
+    it('declares upsert taking rows, uniqueBy and an optional update list', function (): void {
+        $method = new ReflectionMethod(QueryBuilderInterface::class, 'upsert');
+        $params = $method->getParameters();
+
+        expect($method->getReturnType()?->getName())->toBe('int')
+            ->and(array_map(fn (ReflectionParameter $param): string => $param->getName(), $params))
+            ->toBe(['rows', 'uniqueBy', 'update'])
+            ->and($params[2]->allowsNull())->toBeTrue()
+            ->and($params[2]->getDefaultValue())->toBeNull();
+    });
 });

@@ -312,6 +312,34 @@ function makeRqbStubBuilder(array $rows = []): QueryBuilderInterface
             return [];
         }
 
+        public function lockForUpdate(): static
+        {
+            return $this;
+        }
+
+        public function sharedLock(): static
+        {
+            return $this;
+        }
+
+        public function skipLocked(): static
+        {
+            return $this;
+        }
+
+        public function noWait(): static
+        {
+            return $this;
+        }
+
+        public function upsert(
+            array $rows,
+            array $uniqueBy,
+            ?array $update = null,
+        ): int {
+            return count($rows);
+        }
+
         public function groupBy(string ...$columns): static
         {
             return $this;
@@ -718,3 +746,25 @@ it(
             ]);
     },
 );
+
+// ── Row locks and upsert ────────────────────────────────────────────────────────
+
+it('delegates lock methods from RepositoryQueryBuilder and returns itself', function (string $method): void {
+    $inner = $this->createMock(QueryBuilderInterface::class);
+    $inner->expects($this->once())->method($method)->willReturnSelf();
+    $rqb = makeRqb($inner);
+
+    expect($rqb->{$method}())->toBe($rqb);
+})->with(['lockForUpdate', 'sharedLock', 'skipLocked', 'noWait']);
+
+it('delegates upsert from RepositoryQueryBuilder', function (): void {
+    $rows = [['email' => 'ada@example.com', 'name' => 'Ada']];
+    $inner = $this->createMock(QueryBuilderInterface::class);
+    $inner->expects($this->once())
+        ->method('upsert')
+        ->with($rows, ['email'], ['name'])
+        ->willReturn(1);
+    $rqb = makeRqb($inner);
+
+    expect($rqb->upsert($rows, ['email'], ['name']))->toBe(1);
+});

@@ -243,6 +243,7 @@ function makeBatchTransactionConnection(array &$log, bool $failInsert = false): 
 
         public function transaction(callable $callback): mixed
         {
+            $this->log[] = ['type' => 'transaction'];
             $this->beginTransaction();
             try {
                 $result = $callback();
@@ -254,6 +255,15 @@ function makeBatchTransactionConnection(array &$log, bool $failInsert = false): 
                 throw $e;
             }
         }
+
+        public function transactionLevel(): int
+        {
+            return 0;
+        }
+
+        public function afterCommit(callable $callback): void {}
+
+        public function afterRollback(callable $callback): void {}
     };
 }
 
@@ -478,6 +488,37 @@ it('rolls back all rows when any insert fails (within a transaction)', function 
         ->and(in_array('commit', $txEvents))->toBeFalse();
 });
 
+it('wraps the batch insert in transaction() on a transactional connection', function (): void {
+    $log = [];
+    $connection = makeBatchTransactionConnection($log);
+    $repository = new BatchUserRepository($connection, new EntityMetadataFactory(), new EntityHydrator());
+
+    $user = new BatchUser();
+    $user->name = 'Alice';
+    $user->email = 'alice@example.com';
+
+    $repository->insertBatch([$user]);
+
+    expect(array_column($log, 'type'))->toBe(['transaction', 'beginTransaction', 'execute', 'commit']);
+});
+
+it('nests the batch insert inside an outer transaction instead of skipping the wrap', function (): void {
+    $log = [];
+    $connection = makeBatchTransactionConnection($log);
+    $repository = new BatchUserRepository($connection, new EntityMetadataFactory(), new EntityHydrator());
+
+    $user = new BatchUser();
+    $user->name = 'Alice';
+    $user->email = 'alice@example.com';
+
+    $connection->beginTransaction();
+    $repository->insertBatch([$user]);
+
+    expect(array_column($log, 'type'))->toBe(
+        ['beginTransaction', 'transaction', 'beginTransaction', 'execute', 'commit'],
+    );
+});
+
 it('does NOT persist relationships of batch-inserted entities', function (): void {
     $sqlLog = [];
     $connection = makeBatchSpyConnection($sqlLog, 1);
@@ -694,6 +735,15 @@ function makePgsqlTransactionConnection(
                 throw $e;
             }
         }
+
+        public function transactionLevel(): int
+        {
+            return 0;
+        }
+
+        public function afterCommit(callable $callback): void {}
+
+        public function afterRollback(callable $callback): void {}
     };
 }
 

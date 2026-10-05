@@ -323,6 +323,42 @@ class RepositoryQueryBuilder implements EntityQueryBuilderInterface
         return $this->queryBuilder->raw($sql, $bindings);
     }
 
+    public function lockForUpdate(): static
+    {
+        $this->queryBuilder->lockForUpdate();
+
+        return $this;
+    }
+
+    public function sharedLock(): static
+    {
+        $this->queryBuilder->sharedLock();
+
+        return $this;
+    }
+
+    public function skipLocked(): static
+    {
+        $this->queryBuilder->skipLocked();
+
+        return $this;
+    }
+
+    public function noWait(): static
+    {
+        $this->queryBuilder->noWait();
+
+        return $this;
+    }
+
+    public function upsert(
+        array $rows,
+        array $uniqueBy,
+        ?array $update = null,
+    ): int {
+        return $this->queryBuilder->upsert($rows, $uniqueBy, $update);
+    }
+
     /**
      * Specify relationships to eager-load when fetching entities.
      *

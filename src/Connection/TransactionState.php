@@ -1,0 +1,128 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Marko\Database\Connection;
+
+/**
+ * Tracks transaction nesting depth and the after-commit/after-rollback
+ * callbacks registered at each level.
+ *
+ * Drivers own the SQL (BEGIN, SAVEPOINT, RELEASE, ROLLBACK TO) and call
+ * this class after each statement succeeds, so depth and callbacks stay
+ * consistent across PostgreSQL and MySQL.
+ *
+ * - Committing an inner level hands its callbacks to the parent level.
+ * - Committing the outermost level runs the after-commit callbacks.
+ * - Rolling back a level discards its after-commit callbacks and runs its
+ *   after-rollback callbacks.
+ *
+ * Callbacks run after the level has been removed, so a callback that opens
+ * a new transaction starts from a clean state. An exception thrown by a
+ * callback propagates and the remaining callbacks for that level do not run.
+ */
+class TransactionState
+{
+    /**
+     * @var list<array{commit: list<callable>, rollback: list<callable>}>
+     */
+    private array $levels = [];
+
+    public function level(): int
+    {
+        return count($this->levels);
+    }
+
+    public function begin(): void
+    {
+        $this->levels[] = ['commit' => [], 'rollback' => []];
+    }
+
+    /**
+     * Run the callback after the outermost transaction commits, or now when
+     * no transaction is open.
+     */
+    public function afterCommit(
+        callable $callback,
+    ): void {
+        if ($this->levels === []) {
+            $callback();
+
+            return;
+        }
+
+        $this->levels[array_key_last($this->levels)]['commit'][] = $callback;
+    }
+
+    /**
+     * Run the callback if the current level (or a level enclosing it) rolls
+     * back. Outside a transaction there is nothing to roll back, so the
+     * callback is not kept.
+     */
+    public function afterRollback(
+        callable $callback,
+    ): void {
+        if ($this->levels === []) {
+            return;
+        }
+
+        $this->levels[array_key_last($this->levels)]['rollback'][] = $callback;
+    }
+
+    /**
+     * Close the current level after a successful COMMIT or RELEASE SAVEPOINT.
+     */
+    public function commit(): void
+    {
+        $closed = array_pop($this->levels);
+
+        if ($closed === null) {
+            return;
+        }
+
+        if ($this->levels !== []) {
+            $parent = array_key_last($this->levels);
+            $this->levels[$parent]['commit'] = [...$this->levels[$parent]['commit'], ...$closed['commit']];
+            $this->levels[$parent]['rollback'] = [...$this->levels[$parent]['rollback'], ...$closed['rollback']];
+
+            return;
+        }
+
+        foreach ($closed['commit'] as $callback) {
+            $callback();
+        }
+    }
+
+    /**
+     * Close the current level after a successful ROLLBACK or ROLLBACK TO SAVEPOINT.
+     */
+    public function rollback(): void
+    {
+        $closed = array_pop($this->levels);
+
+        if ($closed === null) {
+            return;
+        }
+
+        foreach ($closed['rollback'] as $callback) {
+            $callback();
+        }
+    }
+
+    /**
+     * Drop the current level without running any of its callbacks. Used when
+     * the statement that would close the level failed.
+     */
+    public function discard(): void
+    {
+        array_pop($this->levels);
+    }
+
+    /**
+     * Drop every level without running callbacks.
+     */
+    public function clear(): void
+    {
+        $this->levels = [];
+    }
+}

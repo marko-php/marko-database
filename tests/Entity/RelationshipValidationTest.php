@@ -237,6 +237,34 @@ function makeValidationQueryBuilder(): QueryBuilderInterface
             return [];
         }
 
+        public function lockForUpdate(): static
+        {
+            return $this;
+        }
+
+        public function sharedLock(): static
+        {
+            return $this;
+        }
+
+        public function skipLocked(): static
+        {
+            return $this;
+        }
+
+        public function noWait(): static
+        {
+            return $this;
+        }
+
+        public function upsert(
+            array $rows,
+            array $uniqueBy,
+            ?array $update = null,
+        ): int {
+            return count($rows);
+        }
+
         public function groupBy(string ...$columns): static
         {
             return $this;

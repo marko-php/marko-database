@@ -58,6 +58,21 @@ class RepositoryException extends MarkoException
     }
 
     /**
+     * @param class-string $entityClass
+     */
+    public static function unknownProperty(
+        string $entityClass,
+        string $property,
+        string $argument,
+    ): self {
+        return new self(
+            message: "Entity '$entityClass' has no mapped property '$property'",
+            context: "Resolving the $argument argument of Repository::upsert()",
+            suggestion: 'Name entity properties (e.g. emailAddress), not column names; each must carry a #[Column] attribute',
+        );
+    }
+
+    /**
      * @param class-string $repositoryClass
      */
     public static function queryBuilderNotConfigured(

@@ -299,30 +299,15 @@ abstract class Repository implements RepositoryInterface
     /**
      * Insert multiple entities in a single multi-row INSERT statement.
      *
+     * The insert runs through transaction() when the connection supports
+     * transactions, so it nests as a savepoint inside a caller's transaction.
+     *
      * @param array<Entity> $entities
-     * @throws BatchInsertException|RepositoryException
+     * @throws BatchInsertException|RepositoryException|Throwable
      */
     public function insertBatch(array $entities): void
     {
-        if (count($entities) === 0) {
-            throw BatchInsertException::emptyBatch();
-        }
-
-        foreach ($entities as $entity) {
-            if ($entity->companions() !== []) {
-                throw BatchInsertException::companionsNotSupported($entity::class);
-            }
-        }
-
-        $firstClass = $entities[0]::class;
-
-        foreach ($entities as $index => $entity) {
-            if ($entity::class !== $firstClass) {
-                throw BatchInsertException::heterogeneousBatch($firstClass, $entity::class, $index);
-            }
-        }
-
-        $this->validateEntityType($entities[0]);
+        $this->assertUniformBatch($entities);
 
         // Fire Creating events for each entity before insert
         foreach ($entities as $entity) {
@@ -333,27 +318,8 @@ abstract class Repository implements RepositoryInterface
             $this->applyInsertTimestamps($entity);
         }
 
-        // Build column set from first entity
-        $firstData = $this->extractBatchRow($entities[0]);
-        $columns = array_keys($firstData);
-        $expectedColumns = $columns;
-
-        // Verify column consistency across the batch
-        foreach ($entities as $index => $entity) {
-            if ($index === 0) {
-                continue;
-            }
-
-            $rowData = $this->extractBatchRow($entity);
-            $rowColumns = array_keys($rowData);
-
-            if ($rowColumns !== $expectedColumns) {
-                throw BatchInsertException::columnSetMismatch($firstClass, $index);
-            }
-        }
-
-        // Compile all row data
-        $allRows = array_map(fn (Entity $e) => $this->extractBatchRow($e), $entities);
+        $allRows = $this->extractBatchRows($entities);
+        $columns = array_keys($allRows[0]);
 
         // Build multi-row INSERT SQL
         $placeholderRow = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
@@ -374,14 +340,7 @@ abstract class Repository implements RepositoryInterface
             }
         }
 
-        // Wrap in transaction if none is active
-        $ownsTransaction = false;
-        if ($this->connection instanceof TransactionInterface && !$this->connection->inTransaction()) {
-            $this->connection->beginTransaction();
-            $ownsTransaction = true;
-        }
-
-        try {
+        $write = function () use ($entities, $sql, $bindings): void {
             $pkProperty = $this->metadata->getPrimaryKeyProperty();
             $isAutoIncrement = $pkProperty?->isAutoIncrement === true;
 
@@ -424,22 +383,168 @@ abstract class Repository implements RepositoryInterface
             foreach ($entities as $entity) {
                 $this->hydrator->registerOriginalValues($entity, $this->metadata);
             }
+        };
 
-            if ($ownsTransaction) {
-                $this->connection->commit();
-            }
-        } catch (Throwable $e) {
-            if ($ownsTransaction) {
-                $this->connection->rollback();
-            }
-
-            throw $e;
+        if ($this->connection instanceof TransactionInterface) {
+            $this->connection->transaction($write);
+        } else {
+            $write();
         }
 
         // Fire Created events for each entity after insert
         foreach ($entities as $entity) {
             $this->eventDispatcher?->dispatch(new EntityCreated($entity, static::ENTITY_CLASS));
         }
+    }
+
+    /**
+     * Insert the entities, or update the existing row when one already has
+     * the same values in the $uniqueBy properties, in a single statement.
+     *
+     * $uniqueBy and $update name entity properties, never columns. The
+     * conflict properties are always explicit: they must match a unique index
+     * (PostgreSQL requires an index on exactly those columns). When $update is
+     * null, every property except the $uniqueBy ones, the primary key and the
+     * #[Timestamps] created-at property is updated; pass [] to leave existing
+     * rows untouched.
+     *
+     * #[Timestamps] are applied first: created-at is filled when unset and
+     * updated-at is set to now. Upsert does not fire lifecycle events, set
+     * generated ids or register entities for dirty tracking, because it can't
+     * tell which rows were inserted and which were updated. Load the entities
+     * again when you need them.
+     *
+     * @param array<Entity> $entities
+     * @param array<int, string> $uniqueBy Properties identifying an existing row
+     * @param array<int, string>|null $update Properties to update on conflict
+     * @return int Affected-row count as reported by the driver
+     * @throws BatchInsertException|RepositoryException
+     */
+    public function upsert(
+        array $entities,
+        array $uniqueBy,
+        ?array $update = null,
+    ): int {
+        if ($this->queryBuilderFactory === null) {
+            throw RepositoryException::queryBuilderNotConfigured(static::class);
+        }
+
+        $this->assertUniformBatch($entities);
+
+        $now = $this->now();
+
+        foreach ($entities as $entity) {
+            $this->applyInsertTimestamps($entity);
+            $this->touchUpdatedAt($entity, $now);
+        }
+
+        $rows = $this->extractBatchRows($entities);
+        $uniqueColumns = $this->propertiesToColumns($uniqueBy, '$uniqueBy');
+
+        if ($update === null) {
+            $excluded = $uniqueColumns;
+            $excluded[] = $this->metadata->getPrimaryKeyProperty()?->columnName;
+
+            if ($this->metadata->createdAtProperty !== null) {
+                $excluded[] = $this->metadata->getPropertyToColumnMap()[$this->metadata->createdAtProperty];
+            }
+
+            $updateColumns = array_values(array_filter(
+                array_keys($rows[0]),
+                fn (string $column): bool => !in_array($column, $excluded, true),
+            ));
+        } else {
+            $updateColumns = $this->propertiesToColumns($update, '$update');
+        }
+
+        return $this->queryBuilderFactory->create()
+            ->table($this->metadata->tableName)
+            ->upsert($rows, $uniqueColumns, $updateColumns);
+    }
+
+    /**
+     * Map entity property names to their column names.
+     *
+     * @param array<int, string> $properties
+     * @return list<string>
+     * @throws RepositoryException
+     */
+    private function propertiesToColumns(
+        array $properties,
+        string $argument,
+    ): array {
+        $map = $this->metadata->getPropertyToColumnMap();
+
+        return array_values(array_map(
+            fn (string $property): string => $map[$property]
+                ?? throw RepositoryException::unknownProperty($this->metadata->entityClass, $property, $argument),
+            $properties,
+        ));
+    }
+
+    /**
+     * Set the #[Timestamps] updated-at property to the given instant.
+     */
+    private function touchUpdatedAt(
+        Entity $entity,
+        DateTimeImmutable $now,
+    ): void {
+        if ($this->metadata->updatedAtProperty === null) {
+            return;
+        }
+
+        new ReflectionClass($entity)->getProperty($this->metadata->updatedAtProperty)->setValue($entity, $now);
+    }
+
+    /**
+     * Reject an empty batch, entities with companions, and a batch that mixes
+     * entity classes or holds entities this repository does not manage.
+     *
+     * @param array<Entity> $entities
+     * @throws BatchInsertException|RepositoryException
+     */
+    private function assertUniformBatch(array $entities): void
+    {
+        if (count($entities) === 0) {
+            throw BatchInsertException::emptyBatch();
+        }
+
+        foreach ($entities as $entity) {
+            if ($entity->companions() !== []) {
+                throw BatchInsertException::companionsNotSupported($entity::class);
+            }
+        }
+
+        $firstClass = $entities[0]::class;
+
+        foreach ($entities as $index => $entity) {
+            if ($entity::class !== $firstClass) {
+                throw BatchInsertException::heterogeneousBatch($firstClass, $entity::class, $index);
+            }
+        }
+
+        $this->validateEntityType($entities[0]);
+    }
+
+    /**
+     * Extract one row per entity and verify every row has the same columns.
+     *
+     * @param array<Entity> $entities
+     * @return list<array<string, mixed>>
+     * @throws BatchInsertException
+     */
+    private function extractBatchRows(array $entities): array
+    {
+        $rows = array_values(array_map(fn (Entity $entity): array => $this->extractBatchRow($entity), $entities));
+        $expectedColumns = array_keys($rows[0]);
+
+        foreach ($rows as $index => $row) {
+            if (array_keys($row) !== $expectedColumns) {
+                throw BatchInsertException::columnSetMismatch($entities[0]::class, $index);
+            }
+        }
+
+        return $rows;
     }
 
     /**

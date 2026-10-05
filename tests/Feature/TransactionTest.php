@@ -124,6 +124,15 @@ describe('Transaction Handling', function (): void {
                     throw $e;
                 }
             }
+
+            public function transactionLevel(): int
+            {
+                return 0;
+            }
+
+            public function afterCommit(callable $callback): void {}
+
+            public function afterRollback(callable $callback): void {}
         };
 
         // Test commit flow
@@ -248,6 +257,15 @@ describe('Transaction Handling', function (): void {
                     throw $e;
                 }
             }
+
+            public function transactionLevel(): int
+            {
+                return 0;
+            }
+
+            public function afterCommit(callable $callback): void {}
+
+            public function afterRollback(callable $callback): void {}
         };
 
         $connection->beginTransaction();
@@ -364,6 +382,15 @@ describe('Transaction Handling', function (): void {
             ): null {
                 return null;
             }
+
+            public function transactionLevel(): int
+            {
+                return 0;
+            }
+
+            public function afterCommit(callable $callback): void {}
+
+            public function afterRollback(callable $callback): void {}
         };
 
         expect(fn () => $connection->commit())

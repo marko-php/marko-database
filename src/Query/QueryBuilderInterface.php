@@ -457,4 +457,66 @@ interface QueryBuilderInterface
         string $sql,
         array $bindings = [],
     ): array;
+
+    /**
+     * Lock the selected rows for update (SELECT ... FOR UPDATE).
+     *
+     * Other transactions cannot update, delete or lock the rows until this
+     * transaction ends. get() and first() throw LockException when no
+     * transaction is open, because the lock would be released immediately.
+     * Locks cannot be combined with aggregates or unions.
+     *
+     * @return static For fluent chaining
+     */
+    public function lockForUpdate(): static;
+
+    /**
+     * Lock the selected rows against concurrent writes while still letting
+     * other transactions read and share-lock them (FOR SHARE on PostgreSQL,
+     * LOCK IN SHARE MODE on MySQL). Same transaction rule as lockForUpdate().
+     *
+     * @return static For fluent chaining
+     */
+    public function sharedLock(): static;
+
+    /**
+     * Skip rows another transaction has locked instead of waiting for them
+     * (SKIP LOCKED). Requires lockForUpdate() or sharedLock().
+     *
+     * @return static For fluent chaining
+     */
+    public function skipLocked(): static;
+
+    /**
+     * Fail immediately with a database error instead of waiting when a row
+     * is locked by another transaction (NOWAIT). Requires lockForUpdate() or
+     * sharedLock().
+     *
+     * @return static For fluent chaining
+     */
+    public function noWait(): static;
+
+    /**
+     * Insert rows, updating the existing row instead when one conflicts on
+     * the $uniqueBy columns, in a single statement.
+     *
+     * Every row must name the same columns. When $update is null, every
+     * inserted column except the $uniqueBy columns is updated from the new
+     * row; pass a list to update only those columns, or [] to leave existing
+     * rows untouched.
+     *
+     * PostgreSQL resolves conflicts against the unique index on exactly the
+     * $uniqueBy columns (ON CONFLICT). MySQL resolves them against any
+     * unique index or primary key the row violates (ON DUPLICATE KEY UPDATE).
+     *
+     * @param array<int, array<string, mixed>> $rows Rows of column-value pairs
+     * @param array<int, string> $uniqueBy Columns of the unique index identifying an existing row
+     * @param array<int, string>|null $update Columns to update on conflict (null = all but $uniqueBy)
+     * @return int Affected-row count as reported by the driver (MySQL counts an updated row as 2)
+     */
+    public function upsert(
+        array $rows,
+        array $uniqueBy,
+        ?array $update = null,
+    ): int;
 }

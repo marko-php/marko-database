@@ -228,6 +228,15 @@ describe('SeederRunner', function (): void {
                     throw $e;
                 }
             }
+
+            public function transactionLevel(): int
+            {
+                return 0;
+            }
+
+            public function afterCommit(callable $callback): void {}
+
+            public function afterRollback(callable $callback): void {}
         };
 
         $seeder = new class ($seederExecuted) implements SeederInterface
@@ -296,6 +305,15 @@ describe('SeederRunner', function (): void {
                     throw $e;
                 }
             }
+
+            public function transactionLevel(): int
+            {
+                return 0;
+            }
+
+            public function afterCommit(callable $callback): void {}
+
+            public function afterRollback(callable $callback): void {}
         };
 
         $seeder = new class () implements SeederInterface

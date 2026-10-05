@@ -11,15 +11,6 @@ use Marko\Core\Exceptions\MarkoException;
  */
 class TransactionException extends MarkoException
 {
-    public static function nestedTransactionNotSupported(): self
-    {
-        return new self(
-            message: 'Nested transactions are not supported',
-            context: 'A transaction is already in progress',
-            suggestion: 'Commit or rollback the current transaction before starting a new one',
-        );
-    }
-
     public static function connectionDoesNotSupportTransactions(
         string $connectionClass,
     ): self {
