@@ -198,7 +198,7 @@ abstract class Repository implements RepositoryInterface
         foreach ($criteria as $property => $value) {
             $column = $propertyToColumn[$property] ?? $property;
             $conditions[] = "$column = ?";
-            $bindings[] = $value;
+            $bindings[] = $this->criteriaValue($property, $value);
         }
 
         $sql = sprintf(
@@ -242,7 +242,7 @@ abstract class Repository implements RepositoryInterface
         foreach ($criteria as $property => $value) {
             $column = $propertyToColumn[$property] ?? $property;
             $conditions[] = "$column = ?";
-            $bindings[] = $value;
+            $bindings[] = $this->criteriaValue($property, $value);
         }
 
         $sql = sprintf(
@@ -608,7 +608,7 @@ abstract class Repository implements RepositoryInterface
         foreach ($criteria as $property => $value) {
             $column = $propertyToColumn[$property] ?? $property;
             $conditions[] = "$column = ?";
-            $bindings[] = $value;
+            $bindings[] = $this->criteriaValue($property, $value);
         }
 
         $sql = sprintf(
@@ -620,6 +620,20 @@ abstract class Repository implements RepositoryInterface
         $rows = $this->connection->query($sql, $bindings);
 
         return count($rows) > 0;
+    }
+
+    /**
+     * Convert a criteria value through the cast pipeline when the key is a mapped property.
+     */
+    private function criteriaValue(
+        string|int $property,
+        mixed $value,
+    ): mixed {
+        $propertyMetadata = $this->metadata->properties[$property] ?? null;
+
+        return $propertyMetadata !== null
+            ? $this->hydrator->toDatabaseValue($value, $propertyMetadata)
+            : $value;
     }
 
     /**

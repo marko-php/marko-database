@@ -7,11 +7,13 @@ namespace Marko\Database\Entity;
 use BackedEnum;
 use Marko\Database\Attributes\BelongsTo;
 use Marko\Database\Attributes\BelongsToMany;
+use Marko\Database\Attributes\Cast;
 use Marko\Database\Attributes\Column;
 use Marko\Database\Attributes\HasMany;
 use Marko\Database\Attributes\HasOne;
 use Marko\Database\Attributes\Index;
 use Marko\Database\Attributes\Table;
+use Marko\Database\Entity\Cast\CastInterface;
 use Marko\Database\Exceptions\EntityException;
 use Marko\Database\Exceptions\MissingPrimaryKeyException;
 use ReflectionClass;
@@ -121,7 +123,18 @@ class EntityMetadataFactory
                 $default = $default->value;
             }
 
-            if ($columnAttr->type === 'json' && $phpType !== 'array') {
+            $castClass = null;
+            $castAttributes = $property->getAttributes(Cast::class);
+
+            if ($castAttributes !== []) {
+                $castClass = $castAttributes[0]->newInstance()->castClass;
+
+                if (!is_a($castClass, CastInterface::class, true)) {
+                    throw EntityException::castClassInvalid($castClass, "$entityClass::\$$propertyName");
+                }
+            }
+
+            if ($castClass === null && $columnAttr->type === 'json' && $phpType !== 'array') {
                 throw EntityException::jsonColumnTypeMismatch($entityClass, $propertyName, $phpType);
             }
 
@@ -172,6 +185,7 @@ class EntityMetadataFactory
                 enumClass: $enumClass,
                 default: $columnAttr->default ?? $default,
                 columnType: $columnAttr->type,
+                castClass: $castClass,
             );
         }
 

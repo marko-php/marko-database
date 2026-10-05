@@ -30,6 +30,14 @@ class EntityHydrator
      */
     private WeakMap $originalValues;
 
+    /**
+     * Stores the (unencrypted) database representation of cast and encrypted properties,
+     * so in-place mutation of mutable value objects can be detected.
+     *
+     * @var WeakMap<Entity, array<string, mixed>>
+     */
+    private WeakMap $originalDatabaseValues;
+
     private CastResolver $castResolver;
 
     public function __construct(
@@ -37,6 +45,7 @@ class EntityHydrator
         ?CastResolver $castResolver = null,
     ) {
         $this->originalValues = new WeakMap();
+        $this->originalDatabaseValues = new WeakMap();
         $this->castResolver = $castResolver ?? new CastResolver();
     }
 
@@ -59,6 +68,7 @@ class EntityHydrator
         $entity = $reflection->newInstanceWithoutConstructor();
 
         $originalValues = [];
+        $originalDatabaseValues = [];
 
         foreach ($metadata->properties as $propName => $propMeta) {
             $columnName = $propMeta->columnName;
@@ -74,9 +84,14 @@ class EntityHydrator
             $property->setValue($entity, $phpValue);
 
             $originalValues[$propName] = $phpValue;
+
+            if ($this->tracksDatabaseValue($propMeta)) {
+                $originalDatabaseValues[$propName] = $this->castOnlyDatabaseValue($phpValue, $propMeta);
+            }
         }
 
         $this->originalValues[$entity] = $originalValues;
+        $this->originalDatabaseValues[$entity] = $originalDatabaseValues;
 
         if ($metadata->extenders !== []) {
             if ($this->metadataFactory === null) {
@@ -99,6 +114,7 @@ class EntityHydrator
                 $extenderReflection = new ReflectionClass($extenderClass);
                 $companion = $extenderReflection->newInstanceWithoutConstructor();
                 $companionOriginalValues = [];
+                $companionDatabaseValues = [];
 
                 foreach ($extenderMetadata->properties as $propName => $propMeta) {
                     $columnName = $propMeta->columnName;
@@ -118,9 +134,14 @@ class EntityHydrator
                     $property->setValue($companion, $phpValue);
 
                     $companionOriginalValues[$propName] = $phpValue;
+
+                    if ($this->tracksDatabaseValue($propMeta)) {
+                        $companionDatabaseValues[$propName] = $this->castOnlyDatabaseValue($phpValue, $propMeta);
+                    }
                 }
 
                 $this->originalValues[$companion] = $companionOriginalValues;
+                $this->originalDatabaseValues[$companion] = $companionDatabaseValues;
                 $this->attachCompanion($entity, $companion);
             }
         }
@@ -226,6 +247,7 @@ class EntityHydrator
     ): void {
         $reflection = new ReflectionClass($entity);
         $values = [];
+        $databaseValues = [];
 
         foreach ($metadata->properties as $propName => $propMeta) {
             $property = $reflection->getProperty($propName);
@@ -235,9 +257,14 @@ class EntityHydrator
             }
 
             $values[$propName] = $property->getValue($entity);
+
+            if ($this->tracksDatabaseValue($propMeta)) {
+                $databaseValues[$propName] = $this->castOnlyDatabaseValue($values[$propName], $propMeta);
+            }
         }
 
         $this->originalValues[$entity] = $values;
+        $this->originalDatabaseValues[$entity] = $databaseValues;
     }
 
     /**
@@ -284,6 +311,7 @@ class EntityHydrator
         EntityMetadata $metadata,
     ): array {
         $originalValues = $this->originalValues[$entity] ?? [];
+        $originalDatabaseValues = $this->originalDatabaseValues[$entity] ?? [];
         $reflection = new ReflectionClass($entity);
         $dirty = [];
 
@@ -301,7 +329,11 @@ class EntityHydrator
             $currentValue = $property->getValue($entity);
             $originalValue = $originalValues[$propName];
 
-            if (!$this->valuesEqual($propMeta, $currentValue, $originalValue)) {
+            $changed = array_key_exists($propName, $originalDatabaseValues)
+                ? !$this->trackedValueUnchanged($propMeta, $currentValue, $originalValue, $originalDatabaseValues[$propName])
+                : !$this->valuesEqual($propMeta, $currentValue, $originalValue);
+
+            if ($changed) {
                 $dirty[] = $propName;
             }
         }
@@ -356,6 +388,61 @@ class EntityHydrator
         }
 
         return $dbValue;
+    }
+
+    /**
+     * Whether a property's database representation is snapshotted for dirty checking.
+     */
+    private function tracksDatabaseValue(
+        PropertyMetadata $meta,
+    ): bool {
+        return $meta->castClass !== null || $meta->encrypted;
+    }
+
+    /**
+     * The database representation of a PHP value produced by the cast alone (before encryption).
+     *
+     * @throws EntityException
+     */
+    private function castOnlyDatabaseValue(
+        mixed $value,
+        PropertyMetadata $meta,
+    ): mixed {
+        if ($value === null) {
+            return null;
+        }
+
+        $cast = $this->castFor($meta);
+
+        return $cast !== null ? $cast->toDatabase($value, $meta) : $value;
+    }
+
+    /**
+     * Compare a tracked property against its snapshot.
+     *
+     * Equatable casts decide via equals(); otherwise the current value's database
+     * representation is compared with the snapshot, which also catches in-place
+     * mutation of mutable value objects.
+     *
+     * @throws EntityException
+     */
+    private function trackedValueUnchanged(
+        PropertyMetadata $meta,
+        mixed $current,
+        mixed $originalPhp,
+        mixed $originalDatabase,
+    ): bool {
+        if ($current === null || $originalPhp === null) {
+            return $current === $originalPhp;
+        }
+
+        $cast = $this->castFor($meta);
+
+        if ($cast instanceof EquatableCastInterface) {
+            return $current === $originalPhp || $cast->equals($current, $originalPhp, $meta);
+        }
+
+        return $this->castOnlyDatabaseValue($current, $meta) === $originalDatabase;
     }
 
     /**
