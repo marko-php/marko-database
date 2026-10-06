@@ -27,50 +27,7 @@ use Marko\Database\Tests\Entity\Cast\Fixtures\RecordingSqliteConnection;
 use Marko\Encryption\Contracts\EncryptorInterface;
 use Marko\Encryption\Exceptions\DecryptionException;
 use Marko\Encryption\Exceptions\EncryptionException;
-
-/**
- * Non-deterministic fake that, like a real AEAD cipher, only decrypts with the
- * associated data the value was encrypted with. Records the AAD of every call.
- */
-class FakeRandomEncryptor implements EncryptorInterface
-{
-    /**
-     * @var list<string>
-     */
-    public static array $aads = [];
-
-    public function encrypt(
-        string $value,
-        string $aad = '',
-    ): string {
-        self::$aads[] = $aad;
-
-        return 'enc:' . base64_encode(bin2hex(random_bytes(8)) . '|' . bin2hex($aad) . '|' . $value);
-    }
-
-    public function decrypt(
-        string $encrypted,
-        string $aad = '',
-    ): string {
-        self::$aads[] = $aad;
-
-        if (!str_starts_with($encrypted, 'enc:')) {
-            throw DecryptionException::invalidPayload();
-        }
-
-        $parts = explode('|', (string) base64_decode(substr($encrypted, 4)), 3);
-
-        if (count($parts) !== 3) {
-            throw DecryptionException::invalidPayload();
-        }
-
-        if ($parts[1] !== bin2hex($aad)) {
-            throw DecryptionException::invalidKey();
-        }
-
-        return $parts[2];
-    }
-}
+use Marko\Testing\Fake\FakeEncryptor;
 
 #[Table('secret_records')]
 class SecretRecord extends Entity
@@ -165,10 +122,11 @@ class SchemaTypesEntity extends Entity
     public ?DateTimeImmutable $inferred = null;
 }
 
-function encryptedContainer(): Container
-{
+function encryptedContainer(
+    FakeEncryptor $encryptor = new FakeEncryptor(),
+): Container {
     $container = new Container();
-    $container->bind(EncryptorInterface::class, FakeRandomEncryptor::class);
+    $container->instance(EncryptorInterface::class, $encryptor);
 
     return $container;
 }
@@ -184,9 +142,11 @@ function encryptedConnection(): RecordingSqliteConnection
     return $connection;
 }
 
-function encryptedRepository(RecordingSqliteConnection $connection): SecretRecordRepository
-{
-    $container = encryptedContainer();
+function encryptedRepository(
+    RecordingSqliteConnection $connection,
+    FakeEncryptor $encryptor = new FakeEncryptor(),
+): SecretRecordRepository {
+    $container = encryptedContainer($encryptor);
     $metadataFactory = new EntityMetadataFactory($container);
     $hydrator = new EntityHydrator($metadataFactory, new CastResolver($container));
 
@@ -205,7 +165,7 @@ it('stores ciphertext rather than plaintext', function (): void {
     $stored = $connection->lastInsertValues();
 
     expect($stored['secret'])->not->toBe('top-secret')
-        ->and($stored['secret'])->toStartWith('enc:')
+        ->and($stored['secret'])->toStartWith('fake-encrypted:')
         ->and($stored['label'])->toBe('visible');
 });
 
@@ -236,7 +196,7 @@ it('throws a clear exception at parse time when the metadata factory has no cont
 
 it('accepts an encryptor registered as an instance', function (): void {
     $container = new Container();
-    $container->instance(EncryptorInterface::class, new FakeRandomEncryptor());
+    $container->instance(EncryptorInterface::class, new FakeEncryptor());
 
     $metadata = new EntityMetadataFactory($container)->parse(SecretRecord::class);
 
@@ -356,16 +316,17 @@ it('throws when query criteria target an encrypted property', function (): void 
 });
 
 it('binds each encrypted value to its table and column as associated data', function (): void {
-    FakeRandomEncryptor::$aads = [];
-    $repository = encryptedRepository(encryptedConnection());
+    $encryptor = new FakeEncryptor();
+    $repository = encryptedRepository(encryptedConnection(), $encryptor);
 
     $record = new SecretRecord();
     $record->secret = 'top-secret';
     $repository->save($record);
 
-    expect(FakeRandomEncryptor::$aads)->toContain('secret_records.secret')
-        ->and(FakeRandomEncryptor::$aads)->toContain('secret_records.hint')
-        ->and(FakeRandomEncryptor::$aads)->not->toContain('');
+    $encryptor->assertEncrypted('top-secret', 'secret_records.secret');
+    $encryptor->assertEncrypted(aad: 'secret_records.hint');
+
+    expect(array_column($encryptor->encrypted, 'aad'))->not->toContain('');
 });
 
 it('refuses to hydrate ciphertext copied from another encrypted column', function (): void {
@@ -395,7 +356,7 @@ it('records the table name on property metadata', function (): void {
 });
 
 it('throws when encrypting a property whose metadata has no table name', function (): void {
-    $cast = new EncryptedCast(new FakeRandomEncryptor());
+    $cast = new EncryptedCast(new FakeEncryptor());
 
     $cast->toDatabase('value', new PropertyMetadata(name: 'secret', columnName: 'secret', type: 'string'));
 })->throws(EncryptionException::class, "Cannot encrypt property 'secret' without a table name");
