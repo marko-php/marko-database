@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Tests\Repository;
 
+use Marko\Clock\SystemClock;
 use Marko\Core\Container\BindingRegistry;
 use Marko\Core\Container\Container;
 use Marko\Core\Container\ContainerInterface;
@@ -18,6 +19,7 @@ use Marko\Database\Entity\Entity;
 use Marko\Database\Query\QueryBuilderFactoryInterface;
 use Marko\Database\Query\QueryBuilderInterface;
 use Marko\Database\Repository\Repository;
+use Psr\Clock\ClockInterface;
 use RuntimeException;
 
 #[Table('cross_repo_articles')]
@@ -109,6 +111,7 @@ function buildCrossRepositoryContainer(ConnectionInterface $connection): Contain
     $container = new Container();
     $container->instance(ContainerInterface::class, $container);
     $container->instance(ConnectionInterface::class, $connection);
+    $container->instance(ClockInterface::class, new SystemClock());
     $container->instance(EventDispatcherInterface::class, new class () implements EventDispatcherInterface
     {
         public function dispatch(Event $event): void {}

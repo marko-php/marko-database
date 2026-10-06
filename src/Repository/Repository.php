@@ -6,6 +6,7 @@ namespace Marko\Database\Repository;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Marko\Clock\SystemClock;
 use Marko\Core\Event\EventDispatcherInterface;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\TransactionInterface;
@@ -28,6 +29,7 @@ use Marko\Database\Exceptions\RepositoryException;
 use Marko\Database\Query\QueryBuilderFactoryInterface;
 use Marko\Database\Query\QueryBuilderInterface;
 use Marko\Database\Query\QuerySpecification;
+use Psr\Clock\ClockInterface;
 use ReflectionClass;
 use Throwable;
 
@@ -64,6 +66,7 @@ abstract class Repository implements RepositoryInterface
      * @param QueryBuilderFactoryInterface|null $queryBuilderFactory Optional factory that creates QueryBuilderInterface instances
      * @param EventDispatcherInterface|null $eventDispatcher Optional event dispatcher for lifecycle events
      * @param RelationshipLoader|null $relationshipLoader Optional loader for eager-loading relationships
+     * @param ClockInterface $clock Clock for #[Timestamps]; the container injects the bound clock
      *
      * @throws RepositoryException
      */
@@ -74,6 +77,7 @@ abstract class Repository implements RepositoryInterface
         protected readonly ?QueryBuilderFactoryInterface $queryBuilderFactory = null,
         protected readonly ?EventDispatcherInterface $eventDispatcher = null,
         protected readonly ?RelationshipLoader $relationshipLoader = null,
+        protected readonly ClockInterface $clock = new SystemClock(),
     ) {
         $this->validateEntityClass();
         $this->metadata = $this->metadataFactory->parse(static::ENTITY_CLASS);
@@ -792,13 +796,11 @@ abstract class Repository implements RepositoryInterface
     }
 
     /**
-     * The current instant used for #[Timestamps], in UTC.
-     *
-     * This is the seam for a future clock abstraction (#182).
+     * The current instant used for #[Timestamps]: the injected clock's time, in UTC.
      */
     protected function now(): DateTimeImmutable
     {
-        return new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        return $this->clock->now()->setTimezone(new DateTimeZone('UTC'));
     }
 
     /**

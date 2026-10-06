@@ -7,8 +7,8 @@ namespace Marko\Database\Migration;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\SqlGeneratorInterface;
-
 use Marko\Database\Schema\Table;
+use Psr\Clock\ClockInterface;
 
 /**
  * Generates migration PHP files from SchemaDiff objects.
@@ -27,6 +27,7 @@ class MigrationGenerator
     public function __construct(
         private readonly SqlGeneratorInterface $sqlGenerator,
         ProjectPaths $paths,
+        private readonly ClockInterface $clock,
     ) {
         $this->basePath = $paths->base;
     }
@@ -193,7 +194,7 @@ class MigrationGenerator
         string $operation,
         string $tableName,
     ): string {
-        $timestamp = date('YmdHis', time() + $this->timestampOffset);
+        $timestamp = $this->clock->now()->modify("+$this->timestampOffset seconds")->format('YmdHis');
         $this->timestampOffset++;
 
         return "{$timestamp}_{$operation}_$tableName.php";

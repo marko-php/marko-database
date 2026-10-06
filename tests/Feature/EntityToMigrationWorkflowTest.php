@@ -19,6 +19,7 @@ use Marko\Database\Schema\Column as SchemaColumn;
 use Marko\Database\Schema\ForeignKey;
 use Marko\Database\Schema\Index as SchemaIndex;
 use Marko\Database\Schema\Table as SchemaTable;
+use Marko\Testing\Fake\FakeClock;
 
 // Test entities for the workflow tests
 
@@ -188,7 +189,7 @@ describe('Entity to Migration Workflow', function (): void {
         mkdir($tempDir);
 
         $projectPaths = new ProjectPaths($tempDir);
-        $generator = new MigrationGenerator($sqlGenerator, $projectPaths);
+        $generator = new MigrationGenerator($sqlGenerator, $projectPaths, new FakeClock());
         $paths = $generator->generate($diff);
 
         expect($paths)

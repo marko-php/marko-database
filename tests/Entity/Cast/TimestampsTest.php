@@ -15,6 +15,7 @@ use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Exceptions\EntityException;
 use Marko\Database\Repository\Repository;
 use Marko\Database\Tests\Entity\Cast\Fixtures\RecordingSqliteConnection;
+use Marko\Testing\Fake\FakeClock;
 
 #[Table('ts_posts')]
 #[Timestamps]
@@ -132,32 +133,22 @@ class TsBadExtender extends Entity
     public ?DateTimeImmutable $createdAt = null;
 }
 
-abstract class TsFixedNowRepository extends Repository
-{
-    public static DateTimeImmutable $clock;
-
-    protected function now(): DateTimeImmutable
-    {
-        return static::$clock;
-    }
-}
-
-class TsPostRepository extends TsFixedNowRepository
+class TsPostRepository extends Repository
 {
     protected const string ENTITY_CLASS = TsPost::class;
 }
 
-class TsNullablePostRepository extends TsFixedNowRepository
+class TsNullablePostRepository extends Repository
 {
     protected const string ENTITY_CLASS = TsNullablePost::class;
 }
 
-class TsRenamedRepository extends TsFixedNowRepository
+class TsRenamedRepository extends Repository
 {
     protected const string ENTITY_CLASS = TsRenamed::class;
 }
 
-class TsAccountRepository extends TsFixedNowRepository
+class TsAccountRepository extends Repository
 {
     protected const string ENTITY_CLASS = TsAccount::class;
 }
@@ -185,18 +176,17 @@ function tsAt(string $time): DateTimeImmutable
 }
 
 /**
- * @param class-string<TsFixedNowRepository> $repositoryClass
+ * @param class-string<Repository> $repositoryClass
  */
 function tsRepository(
     string $repositoryClass,
     RecordingSqliteConnection $connection,
-    string $time = '2026-01-01 12:00:00',
-): TsFixedNowRepository {
-    $repositoryClass::$clock = tsAt($time);
+    FakeClock $clock = new FakeClock('2026-01-01 12:00:00 UTC'),
+): Repository {
     $metadataFactory = new EntityMetadataFactory();
     $metadataFactory->linkExtenders(TsAccount::class, [TsAccountProfile::class]);
 
-    return new $repositoryClass($connection, $metadataFactory, new EntityHydrator($metadataFactory));
+    return new $repositoryClass($connection, $metadataFactory, new EntityHydrator($metadataFactory), clock: $clock);
 }
 
 it('sets createdAt and updatedAt on insert', function (): void {
@@ -227,12 +217,13 @@ it('respects explicitly set timestamp values on insert', function (): void {
 
 it('sets only updatedAt on update', function (): void {
     $connection = tsConnection();
-    $repository = tsRepository(TsNullablePostRepository::class, $connection);
+    $clock = new FakeClock('2026-01-01 12:00:00 UTC');
+    $repository = tsRepository(TsNullablePostRepository::class, $connection, $clock);
     $post = new TsNullablePost();
     $post->title = 'Hello';
     $repository->save($post);
 
-    TsNullablePostRepository::$clock = tsAt('2026-02-02 08:00:00');
+    $clock->setNow('2026-02-02 08:00:00 UTC');
     $post->title = 'Changed';
     $repository->save($post);
 
@@ -243,7 +234,8 @@ it('sets only updatedAt on update', function (): void {
 
 it('does not touch updatedAt when nothing is dirty', function (): void {
     $connection = tsConnection();
-    $repository = tsRepository(TsNullablePostRepository::class, $connection);
+    $clock = new FakeClock('2026-01-01 12:00:00 UTC');
+    $repository = tsRepository(TsNullablePostRepository::class, $connection, $clock);
     $post = new TsNullablePost();
     $repository->save($post);
     $updatesBefore = count(array_filter(
@@ -251,7 +243,7 @@ it('does not touch updatedAt when nothing is dirty', function (): void {
         fn (array $entry): bool => str_starts_with($entry['sql'], 'UPDATE'),
     ));
 
-    TsNullablePostRepository::$clock = tsAt('2026-02-02 08:00:00');
+    $clock->setNow('2026-02-02 08:00:00 UTC');
     $repository->save($post);
 
     $updatesAfter = count(array_filter(
@@ -303,14 +295,15 @@ it('sets timestamps for every entity in insertBatch', function (): void {
 
 it('bumps updatedAt when only a companion is dirty', function (): void {
     $connection = tsConnection();
-    $repository = tsRepository(TsAccountRepository::class, $connection);
+    $clock = new FakeClock('2026-01-01 12:00:00 UTC');
+    $repository = tsRepository(TsAccountRepository::class, $connection, $clock);
 
     $account = new TsAccount();
     $profile = new TsAccountProfile();
     $account->attachCompanion($profile);
     $repository->save($account);
 
-    TsAccountRepository::$clock = tsAt('2026-03-03 09:00:00');
+    $clock->setNow('2026-03-03 09:00:00 UTC');
     $profile->bio = 'New bio';
     $repository->save($account);
 
@@ -320,11 +313,12 @@ it('bumps updatedAt when only a companion is dirty', function (): void {
 
 it('keeps a user-modified updatedAt on update', function (): void {
     $connection = tsConnection();
-    $repository = tsRepository(TsNullablePostRepository::class, $connection);
+    $clock = new FakeClock('2026-01-01 12:00:00 UTC');
+    $repository = tsRepository(TsNullablePostRepository::class, $connection, $clock);
     $post = new TsNullablePost();
     $repository->save($post);
 
-    TsNullablePostRepository::$clock = tsAt('2026-02-02 08:00:00');
+    $clock->setNow('2026-02-02 08:00:00 UTC');
     $post->updatedAt = tsAt('2019-09-09 09:09:09');
     $repository->save($post);
 
@@ -345,4 +339,34 @@ it('supports renamed and null-disabled timestamp properties', function (): void 
 
     expect($row->born)->toEqual(tsAt('2026-01-01 12:00:00'))
         ->and($row->updatedAt)->toBeNull();
+});
+
+it('stamps created_at and updated_at from the injected clock in UTC', function (): void {
+    $connection = tsConnection();
+    $repository = tsRepository(
+        TsNullablePostRepository::class,
+        $connection,
+        new FakeClock('2026-10-05 14:00:00+02:00'),
+    );
+
+    $post = new TsNullablePost();
+    $post->title = 'Clocked';
+    $repository->save($post);
+
+    expect($post->createdAt?->format('Y-m-d H:i:s e'))->toBe('2026-10-05 12:00:00 UTC')
+        ->and($post->updatedAt?->format('Y-m-d H:i:s e'))->toBe('2026-10-05 12:00:00 UTC');
+});
+
+it('falls back to the system clock when no clock is given', function (): void {
+    $metadataFactory = new EntityMetadataFactory();
+    $repository = new TsNullablePostRepository(tsConnection(), $metadataFactory, new EntityHydrator($metadataFactory));
+    $before = new DateTimeImmutable('-1 second');
+
+    $post = new TsNullablePost();
+    $post->title = 'System time';
+    $repository->save($post);
+
+    expect($post->createdAt?->getTimezone()->getName())->toBe('UTC')
+        ->and($post->createdAt >= $before)->toBeTrue()
+        ->and($post->createdAt <= new DateTimeImmutable('+1 second'))->toBeTrue();
 });

@@ -11,6 +11,7 @@ use Marko\Database\Schema\Column;
 use Marko\Database\Schema\ForeignKey;
 use Marko\Database\Schema\Table;
 use Marko\Database\Tests\Migration\Helpers;
+use Marko\Testing\Fake\FakeClock;
 
 describe('MigrationGenerator', function (): void {
     beforeEach(function (): void {
@@ -27,6 +28,31 @@ describe('MigrationGenerator', function (): void {
 
         expect($paths)->toHaveCount(1)
             ->and(basename($paths[0]))->toMatch('/^\d{14}_/');
+    });
+
+    it('names migration files from the injected clock', function (): void {
+        ['paths' => $paths] = Helpers::generateTestMigration(
+            $this->tempDir,
+            clock: new FakeClock('2026-03-14 15:09:26'),
+        );
+
+        expect(basename($paths[0]))->toBe('20260314150926_create_posts.php');
+    });
+
+    it('increments migration file timestamps by one second per file from the injected clock', function (): void {
+        $diff = new SchemaDiff(tablesToCreate: [
+            new Table('posts', [new Column('id', 'INT')]),
+            new Table('tags', [new Column('id', 'INT')]),
+        ]);
+
+        ['paths' => $paths] = Helpers::generateTestMigration(
+            $this->tempDir,
+            $diff,
+            clock: new FakeClock('2026-03-14 15:09:59'),
+        );
+
+        expect(array_map(fn (string $path): string => substr(basename($path), 0, 14), $paths))
+            ->toBe(['20260314150959', '20260314151000']);
     });
 
     it('generates migration filename with descriptive suffix from changes', function (): void {
@@ -102,7 +128,7 @@ describe('MigrationGenerator', function (): void {
 
         $sqlGenerator = Helpers::createSqlGeneratorStub();
         $paths = new ProjectPaths($this->tempDir);
-        $generator = new MigrationGenerator($sqlGenerator, $paths);
+        $generator = new MigrationGenerator($sqlGenerator, $paths, new FakeClock());
         $generator->generate(Helpers::createPostsTableDiff());
 
         expect(is_dir($this->tempDir . '/database/migrations'))->toBeTrue();
