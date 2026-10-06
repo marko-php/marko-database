@@ -62,7 +62,17 @@ readonly class Expression
     public static function normalize(
         string $sql,
     ): string {
-        $sql = strtolower(trim((string) preg_replace('/\s+/', ' ', $sql)));
+        return self::unwrap(strtolower((string) preg_replace('/\s+/', ' ', $sql)));
+    }
+
+    /**
+     * The SQL without the parentheses that wrap the whole expression, trimmed, and otherwise unchanged:
+     * `((now() + interval 1 day))` becomes `now() + interval 1 day`, while `(a) + (b)` stays as it is.
+     */
+    public static function unwrap(
+        string $sql,
+    ): string {
+        $sql = trim($sql);
 
         while (self::isWrappedInOneParenthesisPair($sql)) {
             $sql = trim(substr($sql, 1, -1));

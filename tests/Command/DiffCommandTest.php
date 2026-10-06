@@ -10,12 +10,16 @@ use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\TableDiff;
 use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Entity\SchemaBuilder;
+use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Schema\Column;
+use Marko\Database\Schema\Expression;
 use Marko\Database\Schema\Index;
 use Marko\Database\Schema\IndexType;
 use Marko\Database\Schema\SchemaRegistry;
 use Marko\Database\Schema\Table;
+use Marko\Database\Tests\Command\Fixtures\ExpiringTokenEntity;
 use Marko\Database\Tests\Command\Helpers;
+use Marko\Database\Tests\Diff\Fixtures\CountingMatcherIntrospector;
 use Marko\Database\Tests\Entity\Fixtures\ExtenderFactory\BasicExtenderEntity;
 use Marko\Database\Tests\Entity\Fixtures\ExtenderFactory\ExtenderParentEntity;
 
@@ -380,3 +384,61 @@ it('merges extender columns into parent table schema (regression for #66)', func
     expect($output)->toContain('No changes detected')
         ->and($exitCode)->toBe(0);
 });
+
+/**
+ * The tokens table as the database reports it after the entity created it.
+ */
+function storedTokensTable(
+    Expression $expiresAtDefault,
+): Table {
+    return new Table(name: 'tokens', columns: [
+        new Column(name: 'id', type: 'integer', primaryKey: true, autoIncrement: true),
+        new Column(name: 'expires_at', type: 'timestamp', default: $expiresAtDefault),
+    ]);
+}
+
+it('reports no changes when the database stores the entity expression default in its own spelling', function (): void {
+    $introspector = new CountingMatcherIntrospector(
+        fn (): bool => true,
+        ['tokens' => storedTokensTable(new Expression("(now() + '1 day'::interval)"))],
+    );
+
+    $command = Helpers::createDiffCommand(entities: [ExpiringTokenEntity::class], introspector: $introspector);
+    ['output' => $output, 'exitCode' => $exitCode] = Helpers::executeDiffCommand($command);
+
+    expect($output)->toContain('No changes detected.')
+        ->and($exitCode)->toBe(0)
+        ->and($introspector->probes)->toBe([
+            ['table' => 'tokens', 'column' => 'expires_at', 'sql' => "now() + interval '1 day'"],
+        ]);
+});
+
+it('reports the column as modified when the database stores a different expression', function (): void {
+    $introspector = new CountingMatcherIntrospector(
+        fn (): bool => false,
+        ['tokens' => storedTokensTable(new Expression("(now() + '7 days'::interval)"))],
+    );
+
+    $command = Helpers::createDiffCommand(entities: [ExpiringTokenEntity::class], introspector: $introspector);
+    ['output' => $output, 'exitCode' => $exitCode] = Helpers::executeDiffCommand($command);
+
+    expect($output)->toContain('Modify column: expires_at')
+        ->and($exitCode)->toBe(1);
+});
+
+it(
+    'fails with a MigrationException naming the column when the database rejects the expression',
+    function (): void {
+        $introspector = new CountingMatcherIntrospector(
+            function (string $table, string $column, Expression $expression): bool {
+                throw MigrationException::rejectedDefaultExpression($table, $column, $expression->sql, 'syntax error');
+            },
+            ['tokens' => storedTokensTable(new Expression("(now() + '7 days'::interval)"))],
+        );
+
+        $command = Helpers::createDiffCommand(entities: [ExpiringTokenEntity::class], introspector: $introspector);
+
+        expect(fn () => Helpers::executeDiffCommand($command))
+            ->toThrow(MigrationException::class, "column 'tokens.expires_at'");
+    },
+);

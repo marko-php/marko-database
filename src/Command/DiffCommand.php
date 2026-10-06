@@ -10,10 +10,12 @@ use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Diff\DiffCalculator;
+use Marko\Database\Diff\ExpressionDefaultCanonicalizer;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\TableDiff;
 use Marko\Database\Entity\EntityDiscovery;
 use Marko\Database\Exceptions\EntityException;
+use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Introspection\IntrospectorInterface;
 use Marko\Database\Schema\SchemaRegistry;
 use Marko\Database\Schema\Table;
@@ -28,10 +30,11 @@ readonly class DiffCommand implements CommandInterface
         private SchemaRegistry $schemaRegistry,
         private DiffCalculator $diffCalculator,
         private ProjectPaths $paths,
+        private ExpressionDefaultCanonicalizer $expressionDefaultCanonicalizer,
     ) {}
 
     /**
-     * @throws EntityException
+     * @throws EntityException|MigrationException
      */
     public function execute(
         Input $input,
@@ -50,8 +53,11 @@ readonly class DiffCommand implements CommandInterface
         // Get database schema
         $databaseSchema = $this->getDatabaseSchema();
 
-        // Calculate diff
-        $diff = $this->diffCalculator->calculate($entitySchema, $databaseSchema);
+        // Settle expression defaults the database stores in its own spelling, then calculate the diff
+        $diff = $this->diffCalculator->calculate(
+            $this->expressionDefaultCanonicalizer->canonicalize($entitySchema, $databaseSchema),
+            $databaseSchema,
+        );
 
         // Display results
         if ($diff->isEmpty()) {

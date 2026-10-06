@@ -78,6 +78,17 @@ describe('Expression', function (): void {
             ->and((new Expression('now()'))->equals(new Expression('gen_random_uuid()')))->toBeFalse();
     });
 
+    it('strips parentheses that wrap the whole expression without changing its case', function (): void {
+        expect(Expression::unwrap("((CONCAT('A', 'b')))"))->toBe("CONCAT('A', 'b')")
+            ->and(Expression::unwrap(' ( now() + interval 1 day ) '))->toBe('now() + interval 1 day')
+            ->and(Expression::unwrap('NOW()'))->toBe('NOW()');
+    });
+
+    it('keeps parentheses that do not wrap the whole expression', function (): void {
+        expect(Expression::unwrap('(a) + (b)'))->toBe('(a) + (b)')
+            ->and(Expression::unwrap('((a) + (b))'))->toBe('(a) + (b)');
+    });
+
     it('is usable as a Column attribute default', function (): void {
         $id = new ReflectionProperty(ExpressionDefaultEntityFixture::class, 'id')
             ->getAttributes(ColumnAttribute::class)[0]

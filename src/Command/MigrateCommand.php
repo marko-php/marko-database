@@ -12,6 +12,7 @@ use Marko\Core\Command\Output;
 use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Diff\DiffCalculator;
+use Marko\Database\Diff\ExpressionDefaultCanonicalizer;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\SqlGeneratorInterface;
 use Marko\Database\Entity\EntityDiscovery;
@@ -55,10 +56,11 @@ readonly class MigrateCommand implements CommandInterface
         private ProjectPaths $paths,
         private AppEnvironment $appEnvironment,
         private ConfirmationPrompterInterface $confirmationPrompter,
+        private ExpressionDefaultCanonicalizer $expressionDefaultCanonicalizer,
     ) {}
 
     /**
-     * @throws EntityException
+     * @throws EntityException|MigrationException
      */
     public function execute(
         Input $input,
@@ -333,7 +335,7 @@ readonly class MigrateCommand implements CommandInterface
     /**
      * Calculate the diff between entities and database.
      *
-     * @throws EntityException
+     * @throws EntityException|MigrationException When the database rejects an entity's default expression
      */
     private function calculateDiff(): SchemaDiff
     {
@@ -350,8 +352,11 @@ readonly class MigrateCommand implements CommandInterface
         // Get database schema
         $databaseSchema = $this->getDatabaseSchema();
 
-        // Calculate diff
-        return $this->diffCalculator->calculate($entitySchema, $databaseSchema);
+        // Settle expression defaults the database stores in its own spelling, then calculate the diff
+        return $this->diffCalculator->calculate(
+            $this->expressionDefaultCanonicalizer->canonicalize($entitySchema, $databaseSchema),
+            $databaseSchema,
+        );
     }
 
     /**

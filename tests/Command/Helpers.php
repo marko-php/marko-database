@@ -14,6 +14,7 @@ use Marko\Database\Command\DiffCommand;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\StatementInterface;
 use Marko\Database\Diff\DiffCalculator;
+use Marko\Database\Diff\ExpressionDefaultCanonicalizer;
 use Marko\Database\Entity\EntityDiscovery;
 use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Entity\SchemaBuilder;
@@ -238,18 +239,23 @@ final class Helpers
      *
      * @param array<string, Table> $tables Tables for introspector
      * @param array<class-string>  $entities Entity classes for discovery
+     * @param IntrospectorInterface|null $introspector Replaces the stub built from $tables
      */
     public static function createDiffCommand(
         ?DiffCalculator $diffCalculator = null,
         array $tables = [],
         array $entities = [],
+        ?IntrospectorInterface $introspector = null,
     ): DiffCommand {
+        $introspector ??= self::createStubIntrospector($tables);
+
         return new DiffCommand(
             discovery: self::createStubEntityDiscovery($entities),
-            introspector: self::createStubIntrospector($tables),
+            introspector: $introspector,
             schemaRegistry: new SchemaRegistry(new EntityMetadataFactory(), new SchemaBuilder()),
             diffCalculator: $diffCalculator ?? new DiffCalculator(),
             paths: new ProjectPaths('/test'),
+            expressionDefaultCanonicalizer: new ExpressionDefaultCanonicalizer($introspector),
         );
     }
 
