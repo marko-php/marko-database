@@ -57,4 +57,18 @@ describe('Index', function (): void {
             ->and($partial->equals($otherPartial))->toBeFalse()
             ->and($partial->equals($full))->toBeFalse();
     });
+
+    it('ignores whether an index backs a constraint when comparing', function (): void {
+        $index = new Index(name: 'users_email_key', columns: ['email'], type: IndexType::Unique);
+        $constraint = new Index(
+            name: 'users_email_key',
+            columns: ['email'],
+            type: IndexType::Unique,
+            constraint: true,
+        );
+
+        expect($index->constraint)->toBeFalse()
+            ->and($constraint->constraint)->toBeTrue()
+            ->and($index->equals($constraint))->toBeTrue();
+    });
 });

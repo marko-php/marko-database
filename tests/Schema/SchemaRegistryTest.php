@@ -26,6 +26,7 @@ use Marko\Database\Tests\Schema\Fixtures\ProductFkExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductIndexExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductPartialIndexExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductSecondExtenderEntity;
+use Marko\Database\Tests\Schema\Fixtures\ProductSynonymExtenderEntity;
 
 beforeEach(function (): void {
     $this->metadataFactory = new EntityMetadataFactory();
@@ -196,6 +197,14 @@ it('registers a parent entity with one extender and merges columns into the pare
     expect($table)->not->toBeNull()
         ->and($table->columns)->toHaveCount(3)
         ->and(array_map(fn ($c) => $c->name, $table->columns))->toContain('sku');
+});
+
+it('builds extender columns through the schema builder', function (): void {
+    $this->registry->registerEntities([ProductEntity::class, ProductSynonymExtenderEntity::class]);
+
+    $stock = array_find($this->registry->getTable('products')->columns, fn ($column) => $column->name === 'stock');
+
+    expect($stock->type)->toBe('integer');
 });
 
 it('registers a parent entity with multiple extenders and merges columns from all', function (): void {

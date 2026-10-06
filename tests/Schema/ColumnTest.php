@@ -132,6 +132,8 @@ describe('Column', function (): void {
         $slugColumn = new Column(name: 'slug', type: 'varchar');
         $uniqueSlug = $slugColumn->withUnique();
         expect($slugColumn->unique)->toBeFalse()
+            ->and($uniqueSlug->unique)->toBeTrue()
+            ->and($uniqueSlug->withoutUnique()->unique)->toBeFalse()
             ->and($uniqueSlug->unique)->toBeTrue();
 
         // withDefault
@@ -214,6 +216,7 @@ describe('Column', function (): void {
             $column->withAutoIncrement(),
             $column->withNullable(),
             $column->withUnique(),
+            $column->withoutUnique(),
             $column->withDefault('CURRENT_TIMESTAMP(3)'),
             $column->withReference('users.id'),
         ];

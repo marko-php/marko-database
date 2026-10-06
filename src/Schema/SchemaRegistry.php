@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Marko\Database\Schema;
 
-use Marko\Database\Entity\ColumnMetadata;
 use Marko\Database\Entity\EntityMetadata;
 use Marko\Database\Entity\EntityMetadataFactory;
-use Marko\Database\Entity\IndexMetadata;
 use Marko\Database\Entity\SchemaBuilder;
 use Marko\Database\Exceptions\EntityException;
 
@@ -150,7 +148,7 @@ class SchemaRegistry
                         }
 
                         $columnSources[$col->name] = $extenderClass;
-                        $table = $table->withColumn($this->buildColumn($col));
+                        $table = $table->withColumn($this->schemaBuilder->buildColumn($col));
                     }
 
                     // Merge indexes with conflict detection
@@ -164,7 +162,7 @@ class SchemaRegistry
                         }
 
                         $indexSources[$idx->name] = $extenderClass;
-                        $table = $table->withIndex($this->buildIndex($idx));
+                        $table = $table->withIndex($this->schemaBuilder->buildIndex($idx));
                     }
 
                     // Merge foreign keys (use parent table name for FK name generation)
@@ -256,40 +254,5 @@ class SchemaRegistry
         $this->tables = [];
         $this->entityClasses = [];
         $this->metadata = [];
-    }
-
-    /**
-     * Build a Schema Column from ColumnMetadata.
-     */
-    private function buildColumn(
-        ColumnMetadata $col,
-    ): Column {
-        return new Column(
-            name: $col->name,
-            type: $col->type,
-            length: $col->length,
-            nullable: $col->nullable,
-            default: $col->default,
-            unique: $col->unique,
-            primaryKey: $col->primaryKey,
-            autoIncrement: $col->autoIncrement,
-            references: $col->references,
-            onDelete: $col->onDelete,
-            onUpdate: $col->onUpdate,
-        );
-    }
-
-    /**
-     * Build a Schema Index from IndexMetadata.
-     */
-    private function buildIndex(
-        IndexMetadata $idx,
-    ): Index {
-        return new Index(
-            name: $idx->name,
-            columns: $idx->columns,
-            type: $idx->unique ? IndexType::Unique : IndexType::Btree,
-            where: $idx->where,
-        );
     }
 }

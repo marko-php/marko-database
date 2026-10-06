@@ -191,3 +191,41 @@ it('builds ForeignKey objects from column references', function (): void {
         ->and($table->foreignKeys[0]->onDelete)->toBe('CASCADE')
         ->and($table->foreignKeys[0]->onUpdate)->toBe('SET NULL');
 });
+
+it('canonicalizes the int, bool and string type synonyms', function (): void {
+    $entity = new #[Table('synonyms')] class () extends Entity
+    {
+        #[Column(type: 'int', primaryKey: true, autoIncrement: true)]
+        public int $id;
+
+        #[Column(type: 'BOOL')]
+        public bool $active;
+
+        #[Column(type: 'string', length: 100)]
+        public string $name;
+    };
+
+    $columns = $this->schemaBuilder->build($this->metadataFactory->parse($entity::class))->columns;
+
+    expect(array_map(static fn (SchemaColumn $column): string => $column->type, $columns))
+        ->toBe(['integer', 'boolean', 'varchar']);
+});
+
+it('keeps other types as declared', function (): void {
+    $entity = new #[Table('declared_types')] class () extends Entity
+    {
+        #[Column(primaryKey: true, autoIncrement: true)]
+        public int $id;
+
+        #[Column(type: 'bigint')]
+        public int $views;
+
+        #[Column(type: 'text')]
+        public string $body;
+    };
+
+    $columns = $this->schemaBuilder->build($this->metadataFactory->parse($entity::class))->columns;
+
+    expect(array_map(static fn (SchemaColumn $column): string => $column->type, $columns))
+        ->toBe(['integer', 'bigint', 'text']);
+});

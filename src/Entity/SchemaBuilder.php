@@ -16,6 +16,18 @@ use Marko\Database\Schema\Table;
 class SchemaBuilder
 {
     /**
+     * Type synonyms the SQL generators accept, mapped to the name introspectors report, so a column declared as
+     * `int` compares equal to the `integer` column the database holds.
+     *
+     * @var array<string, string>
+     */
+    private const array TYPE_SYNONYMS = [
+        'int' => 'integer',
+        'bool' => 'boolean',
+        'string' => 'varchar',
+    ];
+
+    /**
      * Build a Table schema from EntityMetadata.
      */
     public function build(
@@ -45,12 +57,12 @@ class SchemaBuilder
     /**
      * Build a Column schema from ColumnMetadata.
      */
-    private function buildColumn(
+    public function buildColumn(
         ColumnMetadata $metadata,
     ): Column {
         return new Column(
             name: $metadata->name,
-            type: $metadata->type,
+            type: self::TYPE_SYNONYMS[strtolower($metadata->type)] ?? $metadata->type,
             length: $metadata->length,
             nullable: $metadata->nullable,
             default: $metadata->default,
@@ -66,7 +78,7 @@ class SchemaBuilder
     /**
      * Build an Index schema from IndexMetadata.
      */
-    private function buildIndex(
+    public function buildIndex(
         IndexMetadata $metadata,
     ): Index {
         return new Index(

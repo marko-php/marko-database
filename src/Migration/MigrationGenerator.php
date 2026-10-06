@@ -7,6 +7,7 @@ namespace Marko\Database\Migration;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\SqlGeneratorInterface;
+use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Schema\Table;
 use Psr\Clock\ClockInterface;
 
@@ -36,6 +37,7 @@ class MigrationGenerator
      * Generate migration files from a schema diff.
      *
      * @return array<string> Paths to generated migration files
+     * @throws MigrationException When a table alteration produces no SQL in either direction
      */
     public function generate(
         SchemaDiff $diff,
@@ -44,51 +46,48 @@ class MigrationGenerator
             return [];
         }
 
+        // Every migration is rendered before any file is written, so a refused alteration leaves no partial set
+        $migrations = [];
+
+        // Separate migrations for each table creation (in dependency order)
+        foreach ($this->sortTablesByDependencies($diff->tablesToCreate) as $table) {
+            $migrations[] = ['create', $table->name, new SchemaDiff(tablesToCreate: [$table])];
+        }
+
+        // Separate migrations for each table alteration
+        foreach ($diff->tablesToAlter as $tableName => $tableDiff) {
+            $migrations[] = ['alter', $tableName, new SchemaDiff(tablesToAlter: [$tableName => $tableDiff])];
+        }
+
+        // Separate migrations for each table drop (reverse dependency order)
+        foreach (array_reverse($this->sortTablesByDependencies($diff->tablesToDrop)) as $table) {
+            $migrations[] = ['drop', $table->name, new SchemaDiff(tablesToDrop: [$table])];
+        }
+
+        $rendered = [];
+
+        foreach ($migrations as [$action, $tableName, $migrationDiff]) {
+            $upStatements = $this->sqlGenerator->generateUp($migrationDiff);
+            $downStatements = $this->sqlGenerator->generateDown($migrationDiff);
+
+            // An alteration the generator renders as nothing means the diff and the generator disagree; an empty
+            // migration would hide that, and the diff would report the same change on every run
+            if ($action === 'alter' && $upStatements === [] && $downStatements === []) {
+                throw MigrationException::emptyAlterMigration(
+                    $tableName,
+                    array_map(trim(...), $migrationDiff->tablesToAlter[$tableName]->getSummaryLines()),
+                );
+            }
+
+            $rendered[] = [$action, $tableName, $this->generateMigrationContent($upStatements, $downStatements)];
+        }
+
         $this->ensureMigrationsDirectoryExists();
         $this->timestampOffset = 0;
-
         $paths = [];
 
-        // Sort tables by foreign key dependencies before generating migrations
-        $sortedTables = $this->sortTablesByDependencies($diff->tablesToCreate);
-
-        // Generate separate migrations for each table creation (in dependency order)
-        foreach ($sortedTables as $table) {
-            $tableDiff = new SchemaDiff(tablesToCreate: [$table]);
-            $upStatements = $this->sqlGenerator->generateUp($tableDiff);
-            $downStatements = $this->sqlGenerator->generateDown($tableDiff);
-
-            $filename = $this->generateFilename('create', $table->name);
-            $content = $this->generateMigrationContent($upStatements, $downStatements);
-            $path = $this->writeMigration($filename, $content);
-            $paths[] = $path;
-        }
-
-        // Generate separate migrations for each table alteration
-        foreach ($diff->tablesToAlter as $tableName => $tableDiff) {
-            $alterDiff = new SchemaDiff(tablesToAlter: [$tableName => $tableDiff]);
-            $upStatements = $this->sqlGenerator->generateUp($alterDiff);
-            $downStatements = $this->sqlGenerator->generateDown($alterDiff);
-
-            $filename = $this->generateFilename('alter', $tableName);
-            $content = $this->generateMigrationContent($upStatements, $downStatements);
-            $path = $this->writeMigration($filename, $content);
-            $paths[] = $path;
-        }
-
-        // Generate separate migrations for each table drop (reverse dependency order)
-        $sortedDropTables = $this->sortTablesByDependencies($diff->tablesToDrop);
-        $reversedDropTables = array_reverse($sortedDropTables);
-
-        foreach ($reversedDropTables as $table) {
-            $tableDiff = new SchemaDiff(tablesToDrop: [$table]);
-            $upStatements = $this->sqlGenerator->generateUp($tableDiff);
-            $downStatements = $this->sqlGenerator->generateDown($tableDiff);
-
-            $filename = $this->generateFilename('drop', $table->name);
-            $content = $this->generateMigrationContent($upStatements, $downStatements);
-            $path = $this->writeMigration($filename, $content);
-            $paths[] = $path;
+        foreach ($rendered as [$action, $tableName, $content]) {
+            $paths[] = $this->writeMigration($this->generateFilename($action, $tableName), $content);
         }
 
         return $paths;

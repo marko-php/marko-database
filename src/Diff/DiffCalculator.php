@@ -67,25 +67,28 @@ class DiffCalculator
         Table $entityTable,
         Table $databaseTable,
     ): TableDiff {
-        $columnsToModify = $this->findColumnsToModify(
-            $entityTable->columns,
-            $databaseTable->columns,
-            $entityTable->indexes,
-        );
+        $columnsToModify = $this->findColumnsToModify($entityTable->columns, $databaseTable->columns);
+        $columnsToAdd = $this->findColumnsToAdd($entityTable->columns, $databaseTable->columns);
         $databaseColumns = $this->indexColumnsByName($databaseTable->columns);
+        $uniqueIndexes = $this->deriveUniqueColumnIndexes($entityTable, $columnsToAdd);
+        $indexesToAdd = $this->findIndexesToAdd($entityTable->indexes, $uniqueIndexes, $databaseTable->indexes);
+        $indexesToDrop = $this->findIndexesToDrop($entityTable, $databaseTable->indexes);
 
         return new TableDiff(
             tableName: $entityTable->name,
-            columnsToAdd: $this->findColumnsToAdd($entityTable->columns, $databaseTable->columns),
+            columnsToAdd: $columnsToAdd,
             columnsToDrop: $this->findColumnsToDrop($entityTable->columns, $databaseTable->columns),
             columnsToModify: $columnsToModify,
-            indexesToAdd: $this->findIndexesToAdd($entityTable->indexes, $databaseTable->indexes),
-            indexesToDrop: $this->findIndexesToDrop(
-                $entityTable->indexes,
-                $databaseTable->indexes,
-                $entityTable->columns,
-                $entityTable->unmanagedIndexes,
-            ),
+            indexesToAdd: [
+                ...$indexesToAdd,
+                ...$this->foreignKeyReplacementIndexes(
+                    $entityTable,
+                    $databaseTable->indexes,
+                    $indexesToAdd,
+                    $indexesToDrop,
+                ),
+            ],
+            indexesToDrop: $indexesToDrop,
             foreignKeysToAdd: $this->findForeignKeysToAdd($entityTable->foreignKeys, $databaseTable->foreignKeys),
             foreignKeysToDrop: $this->findForeignKeysToDrop($entityTable->foreignKeys, $databaseTable->foreignKeys),
             columnsToModifyFrom: array_intersect_key($databaseColumns, $columnsToModify),
@@ -141,35 +144,29 @@ class DiffCalculator
     /**
      * Find columns that need to be modified.
      *
+     * Uniqueness is not compared here: the index diff owns it (see deriveUniqueColumnIndexes()), so a column whose
+     * only difference is its unique flag is not modified.
+     *
      * @param array<Column> $entityColumns
      * @param array<Column> $databaseColumns
-     * @param array<Index> $entityIndexes
      * @return array<string, Column>
      */
     private function findColumnsToModify(
         array $entityColumns,
         array $databaseColumns,
-        array $entityIndexes = [],
     ): array {
         $databaseColumnsIndexed = $this->indexColumnsByName($databaseColumns);
         $columnsToModify = [];
 
-        // Find columns that have single-column unique indexes in the entity
-        // These columns are effectively unique even if unique=false on the column
-        $columnsWithUniqueIndex = [];
-        foreach ($entityIndexes as $index) {
-            if ($index->type === IndexType::Unique && count($index->columns) === 1) {
-                $columnsWithUniqueIndex[] = $index->columns[0];
-            }
-        }
-
         foreach ($entityColumns as $entityColumn) {
-            if (isset($databaseColumnsIndexed[$entityColumn->name])) {
-                $databaseColumn = $databaseColumnsIndexed[$entityColumn->name];
+            $databaseColumn = $databaseColumnsIndexed[$entityColumn->name] ?? null;
 
-                if (!$this->columnsEqual($entityColumn, $databaseColumn, $columnsWithUniqueIndex)) {
-                    $columnsToModify[$entityColumn->name] = $entityColumn;
-                }
+            if ($databaseColumn === null) {
+                continue;
+            }
+
+            if (!$entityColumn->withoutUnique()->equals($databaseColumn->withoutUnique())) {
+                $columnsToModify[$entityColumn->name] = $entityColumn;
             }
         }
 
@@ -177,61 +174,72 @@ class DiffCalculator
     }
 
     /**
-     * Compare two columns for equality, with special handling for unique indexes.
+     * The unique index each existing `unique: true` column (not a primary key) implies, named
+     * `<table>_<column>_unique`.
      *
-     * @param array<string> $columnsWithUniqueIndex Columns that have unique indexes defined
+     * A column the entity already covers with a declared single-column unique index gets none, and neither does a
+     * column being added: its ADD COLUMN declares UNIQUE inline.
+     *
+     * @param array<Column> $columnsToAdd
+     * @return array<Index>
      */
-    private function columnsEqual(
-        Column $entityColumn,
-        Column $databaseColumn,
-        array $columnsWithUniqueIndex,
-    ): bool {
-        // If column equals() says they're equal, they're equal
-        if ($entityColumn->equals($databaseColumn)) {
-            return true;
-        }
+    private function deriveUniqueColumnIndexes(
+        Table $entityTable,
+        array $columnsToAdd,
+    ): array {
+        $addedColumnNames = $this->getColumnNames($columnsToAdd);
+        $indexes = [];
 
-        // Check if the only difference is the unique flag.
-        // Unique indexes and unique column constraints are equivalent but
-        // represented differently depending on source:
-        // - Entity: unique=true on column + unique Index object
-        // - DB: may report unique=true (constraint) or unique=false (index only)
-        if ($entityColumn->unique !== $databaseColumn->unique) {
-            $hasUniqueIndex = in_array($entityColumn->name, $columnsWithUniqueIndex, true);
-
-            // entity.unique=false, db.unique=true: entity has a separate unique index
-            // entity.unique=true, db.unique=false: PostgreSQL unique indexes don't set column constraint flag
-            if ($hasUniqueIndex || $entityColumn->unique) {
-                $normalized = new Column(
-                    name: $entityColumn->name,
-                    type: $entityColumn->type,
-                    length: $entityColumn->length,
-                    nullable: $entityColumn->nullable,
-                    default: $entityColumn->default,
-                    unique: $databaseColumn->unique,
-                    primaryKey: $entityColumn->primaryKey,
-                    autoIncrement: $entityColumn->autoIncrement,
-                    references: $entityColumn->references,
-                    onDelete: $entityColumn->onDelete,
-                    onUpdate: $entityColumn->onUpdate,
-                );
-
-                return $normalized->equals($databaseColumn);
+        foreach ($entityTable->columns as $column) {
+            if (
+                !$column->unique
+                || $column->primaryKey
+                || in_array($column->name, $addedColumnNames, true)
+                || array_any(
+                    $entityTable->indexes,
+                    fn (Index $index): bool => $this->isFullUniqueIndexOn($index, $column->name),
+                )
+            ) {
+                continue;
             }
+
+            $indexes[] = new Index(
+                name: "{$entityTable->name}_{$column->name}_unique",
+                columns: [$column->name],
+                type: IndexType::Unique,
+            );
         }
 
-        return false;
+        return $indexes;
+    }
+
+    /**
+     * Whether an index makes exactly one column unique on every row: unique, single-column and not partial.
+     */
+    private function isFullUniqueIndexOn(
+        Index $index,
+        string $columnName,
+    ): bool {
+        return $index->type === IndexType::Unique
+            && $index->columns === [$columnName]
+            && $index->where === null;
     }
 
     /**
      * Find indexes that need to be added.
      *
+     * Declared indexes are matched by name. An index derived from a unique column is matched by its column instead,
+     * so the unique index that CREATE TABLE or ADD COLUMN made inline (named `email` by MySQL, `users_email_key` by
+     * PostgreSQL) satisfies it without being renamed.
+     *
      * @param array<Index> $entityIndexes
+     * @param array<Index> $uniqueColumnIndexes
      * @param array<Index> $databaseIndexes
      * @return array<Index>
      */
     private function findIndexesToAdd(
         array $entityIndexes,
+        array $uniqueColumnIndexes,
         array $databaseIndexes,
     ): array {
         $databaseIndexNames = $this->getIndexNames($databaseIndexes);
@@ -243,64 +251,69 @@ class DiffCalculator
             }
         }
 
+        foreach ($uniqueColumnIndexes as $index) {
+            $columnName = $index->columns[0];
+
+            if (!array_any(
+                $databaseIndexes,
+                fn (Index $databaseIndex): bool => $this->isFullUniqueIndexOn($databaseIndex, $columnName),
+            )) {
+                $indexesToAdd[] = $index;
+            }
+        }
+
         return $indexesToAdd;
     }
 
     /**
      * Find indexes that need to be dropped.
      *
-     * @param array<Index> $entityIndexes
+     * A database index stays when the entity declares it by name, when it is the unique index of a column the entity
+     * marks `unique: true`, when it is opted out of the diff, or when it is a non-unique single-column index on a
+     * foreign key column (MySQL creates those for every foreign key).
+     *
      * @param array<Index> $databaseIndexes
-     * @param array<Column> $entityColumns Entity columns (to check unique and FK properties)
-     * @param list<string> $unmanagedIndexes Index names or patterns declared unmanaged on the entity table
      * @return array<Index>
      */
     private function findIndexesToDrop(
-        array $entityIndexes,
+        Table $entityTable,
         array $databaseIndexes,
-        array $entityColumns = [],
-        array $unmanagedIndexes = [],
     ): array {
-        $entityIndexNames = $this->getIndexNames($entityIndexes);
-        $indexesToDrop = [];
-
-        // Get columns that have unique=true (uniqueness is column-based, not index-based)
+        $entityIndexNames = $this->getIndexNames($entityTable->indexes);
         $uniqueEntityColumns = [];
-        // Get columns that have foreign key references (MySQL auto-creates indexes for FKs)
         $fkEntityColumns = [];
-        foreach ($entityColumns as $col) {
-            if ($col->unique) {
-                $uniqueEntityColumns[] = $col->name;
+
+        foreach ($entityTable->columns as $column) {
+            if ($column->unique && !$column->primaryKey) {
+                $uniqueEntityColumns[] = $column->name;
             }
-            if ($col->references !== null) {
-                $fkEntityColumns[] = $col->name;
+
+            if ($column->references !== null) {
+                $fkEntityColumns[] = $column->name;
             }
         }
 
+        $indexesToDrop = [];
+
         foreach ($databaseIndexes as $index) {
             if (in_array($index->name, $entityIndexNames, true)) {
-                continue;  // Index exists in entity, don't drop
-            }
-
-            if ($this->isIgnoredIndex($index->name, $unmanagedIndexes)) {
-                continue;  // Created by hand and opted out of the diff
-            }
-
-            // Don't drop unique indexes that correspond to columns with unique=true
-            // MySQL creates indexes for UNIQUE constraints, and if the entity defines
-            // the column as unique, the index should be kept
-            if (
-                $index->type === IndexType::Unique
-                && count($index->columns) === 1
-                && in_array($index->columns[0], $uniqueEntityColumns, true)
-            ) {
                 continue;
             }
 
-            // Don't drop indexes on foreign key columns
-            // MySQL requires indexes on FK columns and auto-creates them
+            if ($this->isIgnoredIndex($index->name, $entityTable->unmanagedIndexes)) {
+                continue;
+            }
+
+            if (array_any(
+                $uniqueEntityColumns,
+                fn (string $columnName): bool => $this->isFullUniqueIndexOn($index, $columnName),
+            )) {
+                continue;
+            }
+
             if (
-                count($index->columns) === 1
+                $index->type !== IndexType::Unique
+                && count($index->columns) === 1
                 && in_array($index->columns[0], $fkEntityColumns, true)
             ) {
                 continue;
@@ -310,6 +323,57 @@ class DiffCalculator
         }
 
         return $indexesToDrop;
+    }
+
+    /**
+     * A plain `<table>_<column>_index` for each foreign key column whose unique index is dropped when nothing else
+     * would index it any more: MySQL refuses to drop the last index a foreign key uses. Once added, it is kept as
+     * the foreign key column's index (see findIndexesToDrop()).
+     *
+     * @param array<Index> $databaseIndexes
+     * @param array<Index> $indexesToAdd
+     * @param array<Index> $indexesToDrop
+     * @return array<Index>
+     */
+    private function foreignKeyReplacementIndexes(
+        Table $entityTable,
+        array $databaseIndexes,
+        array $indexesToAdd,
+        array $indexesToDrop,
+    ): array {
+        $droppedNames = $this->getIndexNames($indexesToDrop);
+        $remainingIndexes = [
+            ...array_filter(
+                $databaseIndexes,
+                static fn (Index $index): bool => !in_array($index->name, $droppedNames, true),
+            ),
+            ...$indexesToAdd,
+        ];
+        $replacements = [];
+
+        foreach ($indexesToDrop as $index) {
+            if ($index->type !== IndexType::Unique || count($index->columns) !== 1) {
+                continue;
+            }
+
+            $columnName = $index->columns[0];
+            $isForeignKeyColumn = array_any(
+                $entityTable->columns,
+                static fn (Column $column): bool => $column->name === $columnName && $column->references !== null,
+            );
+            $stillIndexed = array_any(
+                $remainingIndexes,
+                static fn (Index $remaining): bool => ($remaining->columns[0] ?? null) === $columnName,
+            );
+
+            if ($isForeignKeyColumn && !$stillIndexed) {
+                $replacement = new Index(name: "{$entityTable->name}_{$columnName}_index", columns: [$columnName]);
+                $replacements[] = $replacement;
+                $remainingIndexes[] = $replacement;
+            }
+        }
+
+        return $replacements;
     }
 
     /**
@@ -449,19 +513,6 @@ class DiffCalculator
         return array_map(
             static fn (Index $index): string => $index->name,
             $indexes,
-        );
-    }
-
-    /**
-     * @param array<ForeignKey> $foreignKeys
-     * @return array<string>
-     */
-    private function getForeignKeyNames(
-        array $foreignKeys,
-    ): array {
-        return array_map(
-            static fn (ForeignKey $foreignKey): string => $foreignKey->name,
-            $foreignKeys,
         );
     }
 }

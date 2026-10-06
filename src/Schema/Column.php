@@ -52,6 +52,14 @@ readonly class Column
         return clone($this, ['unique' => true]);
     }
 
+    /**
+     * The same column without the unique flag, for comparisons that leave uniqueness to the index diff.
+     */
+    public function withoutUnique(): self
+    {
+        return clone($this, ['unique' => false]);
+    }
+
     public function withDefault(
         mixed $default,
     ): self {

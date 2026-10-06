@@ -296,6 +296,7 @@ readonly class MigrateCommand implements CommandInterface
      * Generate migration files for an entity/database diff.
      *
      * @return array<string> Paths to generated migration files
+     * @throws MigrationException When a table alteration produces no SQL
      */
     private function generateMigrationsFromDiff(
         SchemaDiff $diff,

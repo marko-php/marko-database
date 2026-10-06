@@ -13,6 +13,25 @@ use Marko\Database\Schema\Index;
 use Marko\Database\Schema\IndexType;
 use Marko\Database\Schema\Table;
 
+/**
+ * A users table with an auto-increment id, the given column (if any) and indexes.
+ *
+ * @param list<Index> $indexes
+ */
+function uniqueDiffUsers(
+    ?Column $column = null,
+    array $indexes = [],
+): Table {
+    return new Table(
+        name: 'users',
+        columns: [
+            new Column(name: 'id', type: 'integer', primaryKey: true, autoIncrement: true),
+            ...($column !== null ? [$column] : []),
+        ],
+        indexes: $indexes,
+    );
+}
+
 beforeEach(function (): void {
     $this->calculator = new DiffCalculator();
 });
@@ -702,5 +721,159 @@ describe('DiffCalculator', function (): void {
             ->toContain('Add column: slug')
             ->toContain('Modify column: title')
             ->toContain('Add index: idx_slug');
+    });
+    it('adds a unique index when an existing column becomes unique', function (): void {
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', unique: true))],
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', length: 255))],
+        );
+
+        expect($diff->tablesToAlter['users']->indexesToAdd)->toEqual([
+            new Index(name: 'users_email_unique', columns: ['email'], type: IndexType::Unique),
+        ])
+            ->and($diff->tablesToAlter['users']->indexesToDrop)->toBe([]);
+    });
+
+    it('drops the unique index when an existing column stops being unique', function (): void {
+        $databaseIndex = new Index(name: 'email', columns: ['email'], type: IndexType::Unique);
+
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar'))],
+            ['users' => uniqueDiffUsers(
+                new Column(name: 'email', type: 'varchar', length: 255, unique: true),
+                indexes: [$databaseIndex],
+            )],
+        );
+
+        expect($diff->tablesToAlter['users']->indexesToDrop)->toBe([$databaseIndex])
+            ->and($diff->tablesToAlter['users']->indexesToAdd)->toBe([]);
+    });
+
+    it('keeps an existing single-column unique index of a unique column whatever its name', function (
+        string $indexName,
+    ): void {
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', unique: true))],
+            ['users' => uniqueDiffUsers(
+                new Column(name: 'email', type: 'varchar', length: 255, unique: true),
+                indexes: [new Index(name: $indexName, columns: ['email'], type: IndexType::Unique)],
+            )],
+        );
+
+        expect($diff->isEmpty())->toBeTrue();
+    })->with(['mysql inline' => 'email', 'pgsql inline' => 'users_email_key', 'derived' => 'users_email_unique']);
+
+    it('does not report a column as modified when only its unique flag differs', function (): void {
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', unique: true))],
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', length: 255))],
+        );
+
+        expect($diff->tablesToAlter['users']->columnsToModify)->toBe([]);
+    });
+
+    it('does not derive a unique index for a column that is being added', function (): void {
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', unique: true))],
+            ['users' => uniqueDiffUsers()],
+        );
+
+        expect($diff->tablesToAlter['users']->columnsToAdd)->toHaveCount(1)
+            ->and($diff->tablesToAlter['users']->indexesToAdd)->toBe([]);
+    });
+
+    it('does not derive a unique index when the entity declares one on the column', function (): void {
+        $declared = new Index(name: 'idx_users_email', columns: ['email'], type: IndexType::Unique);
+
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(
+                new Column(name: 'email', type: 'varchar', unique: true),
+                indexes: [$declared],
+            )],
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', length: 255))],
+        );
+
+        expect($diff->tablesToAlter['users']->indexesToAdd)->toBe([$declared]);
+    });
+
+    it("does not treat a partial unique index as the column's uniqueness", function (): void {
+        $partial = new Index(
+            name: 'users_email_live',
+            columns: ['email'],
+            type: IndexType::Unique,
+            where: 'deleted_at IS NULL',
+        );
+
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', unique: true))],
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', length: 255), indexes: [$partial])],
+        );
+
+        expect($diff->tablesToAlter['users']->indexesToAdd)->toEqual([
+            new Index(name: 'users_email_unique', columns: ['email'], type: IndexType::Unique),
+        ])
+            ->and($diff->tablesToAlter['users']->indexesToDrop)->toBe([$partial]);
+    });
+
+    it('drops a unique index on a foreign key column that is no longer unique', function (): void {
+        $unique = new Index(name: 'team_id', columns: ['team_id'], type: IndexType::Unique);
+
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'team_id', type: 'integer', references: 'teams.id'))],
+            ['users' => uniqueDiffUsers(
+                new Column(name: 'team_id', type: 'integer', unique: true),
+                indexes: [$unique],
+            )],
+        );
+
+        expect($diff->tablesToAlter['users']->indexesToDrop)->toBe([$unique]);
+    });
+
+    it('adds a plain replacement index when it drops the only index of a foreign key column', function (): void {
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'team_id', type: 'integer', references: 'teams.id'))],
+            ['users' => uniqueDiffUsers(
+                new Column(name: 'team_id', type: 'integer', unique: true),
+                indexes: [new Index(name: 'team_id', columns: ['team_id'], type: IndexType::Unique)],
+            )],
+        );
+
+        expect($diff->tablesToAlter['users']->indexesToAdd)->toEqual([
+            new Index(name: 'users_team_id_index', columns: ['team_id']),
+        ]);
+    });
+
+    it(
+        'adds no replacement index when another index on the database table already leads with the foreign key column',
+        function (): void {
+            $diff = $this->calculator->calculate(
+                ['users' => uniqueDiffUsers(
+                    new Column(name: 'team_id', type: 'integer', references: 'teams.id'),
+                    indexes: [new Index(name: 'idx_team_role', columns: ['team_id', 'id'])],
+                )],
+                ['users' => uniqueDiffUsers(
+                    new Column(name: 'team_id', type: 'integer', unique: true),
+                    indexes: [
+                        new Index(name: 'team_id', columns: ['team_id'], type: IndexType::Unique),
+                        new Index(name: 'idx_team_role', columns: ['team_id', 'id']),
+                    ],
+                )],
+            );
+
+            expect($diff->tablesToAlter['users']->indexesToAdd)->toBe([])
+                ->and($diff->tablesToAlter['users']->indexesToDrop)->toHaveCount(1);
+        },
+    );
+
+    it('keeps a non-unique index on a foreign key column', function (): void {
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'team_id', type: 'integer', references: 'teams.id'))],
+            ['users' => uniqueDiffUsers(
+                new Column(name: 'team_id', type: 'integer'),
+                indexes: [new Index(name: 'team_id', columns: ['team_id'])],
+            )],
+        );
+
+        expect($diff->isEmpty())->toBeTrue();
     });
 });

@@ -69,6 +69,25 @@ class MigrationException extends MarkoException
         );
     }
 
+    /**
+     * @param list<string> $changes The changes the diff reported, such as `Modify column: title`
+     */
+    public static function emptyAlterMigration(
+        string $table,
+        array $changes,
+    ): self {
+        $changeList = implode('; ', $changes);
+
+        return new self(
+            message: "The schema diff reports changes to table '$table' ($changeList), but the SQL generator "
+                . 'produced no statements for them',
+            context: "While generating the alter migration for table '$table'",
+            suggestion: 'The diff and the SQL generator disagree about this table, so no migration was written. Compare '
+                . "the entity definition with the database's table definition and report the mismatch; until it is "
+                . 'fixed, write any real change to this table by hand in a migration.',
+        );
+    }
+
     public static function columnChangeNotSupported(
         string $table,
         string $column,
