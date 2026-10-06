@@ -8,14 +8,17 @@ use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\SqlGeneratorInterface;
 use Marko\Database\Exceptions\MigrationException;
+use Marko\Database\Schema\Column;
+use Marko\Database\Schema\ForeignKey;
+use Marko\Database\Schema\Index;
 use Marko\Database\Schema\Table;
 use Psr\Clock\ClockInterface;
 
 /**
  * Generates migration PHP files from SchemaDiff objects.
  *
- * Uses nowdoc syntax for SQL statements to enable easy copy/paste
- * for testing in external database tools.
+ * Each SQL statement is rendered as a var_export() string literal, so no statement text, including names
+ * introspected from the database, can end the literal early and inject PHP into the generated file.
  */
 class MigrationGenerator
 {
@@ -63,6 +66,8 @@ class MigrationGenerator
         foreach (array_reverse($this->sortTablesByDependencies($diff->tablesToDrop)) as $table) {
             $migrations[] = ['drop', $table->name, new SchemaDiff(tablesToDrop: [$table])];
         }
+
+        $this->assertSafeIdentifiers($diff);
 
         $rendered = [];
 
@@ -262,26 +267,112 @@ PHP;
             $sql .= ';';
         }
 
-        // Indent SQL for readability inside nowdoc
-        $indentedSql = $this->indentSql($sql);
-
-        return <<<PHP
-        \$this->execute(\$connection, <<<'SQL'
-$indentedSql
-            SQL);
-PHP;
+        // var_export() escapes quotes and backslashes, so no statement text can end the string literal early
+        return '        $this->execute($connection, ' . var_export($sql, true) . ');';
     }
 
-    private function indentSql(
-        string $sql,
-    ): string {
-        $lines = explode("\n", $sql);
-        $indentedLines = array_map(
-            fn (string $line): string => '            ' . $line,
-            $lines,
-        );
+    /**
+     * Refuse table, column, index and constraint names holding control characters. Names come from entities and
+     * from database introspection; a newline or NUL in one is never a real schema name, only a way to break out of
+     * the SQL or PHP the generator writes.
+     *
+     * @throws MigrationException When a name in the diff contains a control character
+     */
+    private function assertSafeIdentifiers(
+        SchemaDiff $diff,
+    ): void {
+        $names = [];
 
-        return implode("\n", $indentedLines);
+        foreach ([...$diff->tablesToCreate, ...$diff->tablesToDrop] as $table) {
+            $names = [
+                ...$names,
+                $table->name,
+                ...$this->columnNames($table->columns),
+                ...$this->indexNames($table->indexes),
+                ...$this->foreignKeyNames($table->foreignKeys),
+            ];
+        }
+
+        foreach ($diff->tablesToAlter as $tableName => $tableDiff) {
+            $names = [
+                ...$names,
+                (string) $tableName,
+                $tableDiff->tableName,
+                ...$tableDiff->currentPrimaryKey,
+                ...$this->columnNames($tableDiff->columnsToAdd),
+                ...$this->columnNames($tableDiff->columnsToDrop),
+                ...$this->columnNames($tableDiff->columnsToModify),
+                ...$this->columnNames($tableDiff->columnsToModifyFrom),
+                ...$this->indexNames($tableDiff->indexesToAdd),
+                ...$this->indexNames($tableDiff->indexesToDrop),
+                ...$this->foreignKeyNames($tableDiff->foreignKeysToAdd),
+                ...$this->foreignKeyNames($tableDiff->foreignKeysToDrop),
+            ];
+        }
+
+        foreach ($names as $name) {
+            if (preg_match('/[\x00-\x1F\x7F]/', $name) === 1) {
+                throw MigrationException::controlCharacterInIdentifier($name);
+            }
+        }
+    }
+
+    /**
+     * @param array<Column> $columns
+     * @return list<string>
+     */
+    private function columnNames(
+        array $columns,
+    ): array {
+        $names = [];
+
+        foreach ($columns as $column) {
+            $names[] = $column->name;
+
+            if ($column->references !== null) {
+                $names[] = $column->references;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param array<Index> $indexes
+     * @return list<string>
+     */
+    private function indexNames(
+        array $indexes,
+    ): array {
+        $names = [];
+
+        foreach ($indexes as $index) {
+            $names = [...$names, $index->name, ...$index->columns];
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param array<ForeignKey> $foreignKeys
+     * @return list<string>
+     */
+    private function foreignKeyNames(
+        array $foreignKeys,
+    ): array {
+        $names = [];
+
+        foreach ($foreignKeys as $foreignKey) {
+            $names = [
+                ...$names,
+                $foreignKey->name,
+                $foreignKey->referencedTable,
+                ...$foreignKey->columns,
+                ...$foreignKey->referencedColumns,
+            ];
+        }
+
+        return $names;
     }
 
     private function writeMigration(

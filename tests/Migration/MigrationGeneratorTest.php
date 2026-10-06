@@ -10,6 +10,7 @@ use Marko\Database\Migration\Migration;
 use Marko\Database\Migration\MigrationGenerator;
 use Marko\Database\Schema\Column;
 use Marko\Database\Schema\ForeignKey;
+use Marko\Database\Schema\Index;
 use Marko\Database\Schema\Table;
 use Marko\Database\Tests\Migration\Helpers;
 use Marko\Testing\Fake\FakeClock;
@@ -89,26 +90,111 @@ describe('MigrationGenerator', function (): void {
             ->toContain('DROP TABLE "posts"');
     });
 
-    it('uses nowdoc syntax for SQL statements', function (): void {
+    it('renders each SQL statement as a single-quoted string literal', function (): void {
         ['content' => $content] = Helpers::generateTestMigration($this->tempDir);
 
         expect($content)
-            ->toContain("<<<'SQL'")
-            ->toContain('SQL);');
+            ->toContain('        $this->execute($connection, \'CREATE TABLE "posts" (id INT);\');')
+            ->not->toContain('<<<');
     });
 
     it('includes semicolons at end of SQL statements', function (): void {
         ['content' => $content] = Helpers::generateTestMigration($this->tempDir);
 
         expect($content)
-            ->toMatch('/CREATE TABLE "posts" \(id INT\);\s+SQL\)/')
-            ->toMatch('/DROP TABLE "posts";\s+SQL\)/');
+            ->toContain('\'CREATE TABLE "posts" (id INT);\'')
+            ->toContain('\'DROP TABLE "posts";\'');
     });
 
-    it('formats SQL with proper indentation inside nowdoc', function (): void {
-        ['content' => $content] = Helpers::generateTestMigration($this->tempDir);
+    it('keeps a statement crafted to close a nowdoc inside its string literal', function (): void {
+        $payload = "ALTER TABLE \"posts\" DROP COLUMN \"x\nSQL); echo 'PWNED'; \$z = (<<<'SQL'\n\";";
 
-        expect($content)->toContain('            CREATE TABLE');
+        ['paths' => $paths, 'content' => $content] = Helpers::generateTestMigration(
+            $this->tempDir,
+            upStatements: [$payload],
+            downStatements: ['SELECT \'it\'\'s\', \'back\\\\slash\';'],
+        );
+
+        exec(escapeshellarg(PHP_BINARY) . ' -l ' . escapeshellarg($paths[0]) . ' 2>&1', $lintOutput, $lintCode);
+
+        $executedSql = [];
+        $executedBindings = [];
+        $connection = Helpers::createTrackingConnection($executedSql, $executedBindings);
+        $migration = require $paths[0];
+
+        ob_start();
+        $migration->up($connection);
+        $migration->down($connection);
+        $output = ob_get_clean();
+
+        $tokenNames = array_map(
+            fn (PhpToken $token): string => $token->getTokenName() ?? '',
+            PhpToken::tokenize($content),
+        );
+
+        expect($lintCode)->toBe(0)
+            ->and($tokenNames)->not->toContain('T_START_HEREDOC')
+            ->and($tokenNames)->not->toContain('T_ECHO')
+            ->and($output)->toBe('')
+            ->and($executedSql)->toBe([$payload, 'SELECT \'it\'\'s\', \'back\\\\slash\';']);
+    });
+
+    it('refuses an identifier holding a control character', function (string $name): void {
+        $diff = new SchemaDiff(tablesToAlter: ['posts' => new TableDiff(
+            tableName: 'posts',
+            columnsToDrop: [new Column($name, 'text')],
+        )]);
+
+        expect(fn () => Helpers::generateTestMigration($this->tempDir, $diff))
+            ->toThrow(MigrationException::class, 'contains a control character');
+    })->with([
+        'newline breakout' => ["x\nSQL); echo 'PWNED'; \$z = (<<<'SQL'\n"],
+        'carriage return' => ["x\ry"],
+        'NUL byte' => ["x\0y"],
+        'tab' => ["x\ty"],
+        'DEL' => ["x\x7Fy"],
+    ]);
+
+    it('refuses control characters in every kind of name the diff holds', function (SchemaDiff $diff): void {
+        expect(fn () => Helpers::generateTestMigration($this->tempDir, $diff))
+            ->toThrow(MigrationException::class, 'contains a control character');
+    })->with([
+        'created table name' => fn () => new SchemaDiff(tablesToCreate: [new Table("po\nsts")]),
+        'dropped table column' => fn () => new SchemaDiff(
+            tablesToDrop: [new Table('posts', [new Column("i\nd", 'int')])],
+        ),
+        'dropped index' => fn () => new SchemaDiff(tablesToAlter: ['posts' => new TableDiff(
+            tableName: 'posts',
+            indexesToDrop: [new Index("idx\n", ['title'])],
+        )]),
+        'dropped foreign key column' => fn () => new SchemaDiff(tablesToAlter: ['posts' => new TableDiff(
+            tableName: 'posts',
+            foreignKeysToDrop: [new ForeignKey('fk', ["user\n_id"], 'users', ['id'])],
+        )]),
+        'previous column definition' => fn () => new SchemaDiff(tablesToAlter: ['posts' => new TableDiff(
+            tableName: 'posts',
+            columnsToModify: ['title' => new Column('title', 'text')],
+            columnsToModifyFrom: ['title' => new Column("title\n", 'varchar')],
+        )]),
+    ]);
+
+    it('shows the control character escaped in the error message', function (): void {
+        $diff = new SchemaDiff(tablesToCreate: [new Table("po\nsts")]);
+
+        expect(fn () => Helpers::generateTestMigration($this->tempDir, $diff))
+            ->toThrow(MigrationException::class, "Identifier 'po\\nsts' contains a control character");
+    });
+
+    it('writes no file when it refuses an identifier', function (): void {
+        $diff = new SchemaDiff(tablesToCreate: [new Table("po\nsts")]);
+
+        try {
+            Helpers::generateTestMigration($this->tempDir, $diff);
+        } catch (MigrationException) {
+            // Expected
+        }
+
+        expect(glob($this->tempDir . '/database/migrations/*.php'))->toBe([]);
     });
 
     it('uses $this->execute() for each SQL statement', function (): void {
