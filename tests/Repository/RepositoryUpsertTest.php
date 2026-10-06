@@ -202,4 +202,51 @@ describe('Repository::upsert', function (): void {
         makeUpsertRepository(new RecordingUpsertBuilder())
             ->upsert([$existing, makeSubscriber('b@example.com', 'B')], ['emailAddress']);
     })->throws(BatchInsertException::class);
+
+    it(
+        'omits unset generated keys from an upsert on a connection without RETURNING without throwing',
+        function (): void {
+            $recorder = new RecordingUpsertBuilder();
+            $builder = test()->createStub(QueryBuilderInterface::class);
+            $builder->method('table')->willReturn($builder);
+            $builder->method('upsert')->willReturnCallback(
+                function (array $rows, array $uniqueBy, ?array $update) use ($recorder): int {
+                    $recorder->upsertArgs = [$rows, $uniqueBy, $update];
+
+                    return count($rows);
+                },
+            );
+            $factory = test()->createStub(QueryBuilderFactoryInterface::class);
+            $factory->method('create')->willReturn($builder);
+            $connection = test()->createStub(ConnectionInterface::class);
+            $connection->method('supportsReturning')->willReturn(false);
+            $repository = new UpsertGeneratedTokenRepository(
+                $connection,
+                new EntityMetadataFactory(),
+                new EntityHydrator(),
+                $factory,
+            );
+            $token = new UpsertGeneratedToken();
+            $token->name = 'api';
+
+            $repository->upsert([$token], ['name']);
+
+            expect($recorder->upsertArgs[0])->toBe([['name' => 'api']]);
+        },
+    );
 });
+
+#[Table('upsert_generated_tokens')]
+class UpsertGeneratedToken extends Entity
+{
+    #[Column(primaryKey: true, type: 'uuid', default: 'gen_random_uuid()', generated: true)]
+    public string $id;
+
+    #[Column]
+    public string $name = '';
+}
+
+class UpsertGeneratedTokenRepository extends Repository
+{
+    protected const string ENTITY_CLASS = UpsertGeneratedToken::class;
+}

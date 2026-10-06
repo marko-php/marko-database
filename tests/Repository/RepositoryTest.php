@@ -461,6 +461,11 @@ it('inserts new entity with save() when no ID', function (): void {
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -543,6 +548,11 @@ it('updates existing entity with save() when has ID', function (): void {
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -623,6 +633,11 @@ it('only updates dirty fields on existing entity', function (): void {
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -689,6 +704,11 @@ it('sets auto-generated ID on entity after insert', function (): void {
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 
@@ -770,6 +790,11 @@ it('deletes entity with delete()', function (): void {
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 
@@ -868,6 +893,11 @@ it('supports count() method returning total count', function (): void {
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -931,6 +961,11 @@ it('supports exists(id) method returning boolean', function (): void {
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 
@@ -1118,6 +1153,11 @@ function createMockConnection(
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 }
@@ -1535,6 +1575,11 @@ function createStorageConnection(
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 
@@ -1592,6 +1637,11 @@ function createSpyConnection(array &$sqlLog, array $queryResults = []): Connecti
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 }
@@ -1746,6 +1796,11 @@ it('Repository::count() delegates to the builder without duplicating logic', fun
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 
     $queryBuilderFactory = new class ($builderCountCalled, $connection) implements QueryBuilderFactoryInterface
@@ -1826,6 +1881,11 @@ describe('companion insert and update', function (): void {
             public function driverName(): string
             {
                 return 'sqlite';
+            }
+
+            public function supportsReturning(): bool
+            {
+                return false;
             }
         };
     }
@@ -2191,4 +2251,251 @@ describe('companion insert and update', function (): void {
                 ->toThrow(BatchInsertException::class, 'companions');
         },
     );
+});
+
+#[Table('generated_tokens')]
+class RepositoryTestGeneratedKeyToken extends Entity
+{
+    #[Column(primaryKey: true, type: 'uuid', default: 'gen_random_uuid()', generated: true)]
+    public ?string $id;
+
+    #[Column]
+    public string $name = '';
+}
+
+/**
+ * @extends Repository<RepositoryTestGeneratedKeyToken>
+ */
+class RepositoryTestGeneratedKeyTokenRepository extends Repository
+{
+    protected const string ENTITY_CLASS = RepositoryTestGeneratedKeyToken::class;
+}
+
+#[Table('plain_tokens')]
+class RepositoryTestPlainKeyToken extends Entity
+{
+    #[Column(primaryKey: true)]
+    public ?string $id;
+
+    #[Column]
+    public string $name = '';
+}
+
+/**
+ * @extends Repository<RepositoryTestPlainKeyToken>
+ */
+class RepositoryTestPlainKeyTokenRepository extends Repository
+{
+    protected const string ENTITY_CLASS = RepositoryTestPlainKeyToken::class;
+}
+
+/**
+ * A connection that logs every statement and answers query() with the given rows.
+ *
+ * @param list<array{type: string, sql: string, bindings: array<mixed>}> $sqlLog
+ * @param list<array<string, mixed>> $queryRows
+ */
+function createReturningSpyConnection(
+    array &$sqlLog,
+    bool $supportsReturning,
+    array $queryRows = [],
+): ConnectionInterface {
+    return new class ($sqlLog, $supportsReturning, $queryRows) implements ConnectionInterface
+    {
+        public function __construct(
+            private array &$sqlLog,
+            private readonly bool $supportsReturning,
+            private readonly array $queryRows,
+        ) {}
+
+        public function connect(): void {}
+
+        public function disconnect(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+
+        public function query(
+            string $sql,
+            array $bindings = [],
+        ): array {
+            $this->sqlLog[] = ['type' => 'query', 'sql' => $sql, 'bindings' => $bindings];
+
+            return $this->queryRows;
+        }
+
+        public function execute(
+            string $sql,
+            array $bindings = [],
+        ): int {
+            $this->sqlLog[] = ['type' => 'execute', 'sql' => $sql, 'bindings' => $bindings];
+
+            return 1;
+        }
+
+        public function prepare(
+            string $sql,
+        ): StatementInterface {
+            throw new RuntimeException('Not implemented');
+        }
+
+        public function lastInsertId(): int
+        {
+            throw new RuntimeException('lastInsertId() must not be called for a generated key');
+        }
+
+        public function driverName(): string
+        {
+            return $this->supportsReturning ? 'pgsql' : 'mysql';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return $this->supportsReturning;
+        }
+    };
+}
+
+describe('database-generated primary keys', function (): void {
+    beforeEach(function (): void {
+        $this->metadataFactory = new EntityMetadataFactory();
+        $this->hydrator = new EntityHydrator($this->metadataFactory);
+        $this->sqlLog = [];
+        $this->uuid = '6f1c9a52-8a43-4b8e-9f3d-2c7b1e5a0d94';
+    });
+
+    it('omits an unset generated key from the INSERT and reads it back with RETURNING', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, true, [['id' => $this->uuid]]);
+        $repository = new RepositoryTestGeneratedKeyTokenRepository(
+            $connection,
+            $this->metadataFactory,
+            $this->hydrator,
+        );
+        $token = new RepositoryTestGeneratedKeyToken();
+        $token->name = 'api';
+
+        $repository->save($token);
+
+        expect($this->sqlLog)->toBe([[
+            'type' => 'query',
+            'sql' => 'INSERT INTO generated_tokens (name) VALUES (?) RETURNING id',
+            'bindings' => ['api'],
+        ]])
+            ->and($token->id)->toBe($this->uuid);
+    });
+
+    it('omits a null generated key from the INSERT and reads it back with RETURNING', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, true, [['id' => $this->uuid]]);
+        $repository = new RepositoryTestGeneratedKeyTokenRepository(
+            $connection,
+            $this->metadataFactory,
+            $this->hydrator,
+        );
+        $token = new RepositoryTestGeneratedKeyToken();
+        $token->id = null;
+        $token->name = 'api';
+
+        $repository->save($token);
+
+        expect($this->sqlLog[0]['sql'])->toBe('INSERT INTO generated_tokens (name) VALUES (?) RETURNING id')
+            ->and($token->id)->toBe($this->uuid);
+    });
+
+    it('inserts a generated key that is already set without RETURNING', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, false);
+        $repository = new RepositoryTestGeneratedKeyTokenRepository(
+            $connection,
+            $this->metadataFactory,
+            $this->hydrator,
+        );
+        $token = new RepositoryTestGeneratedKeyToken();
+        $token->id = $this->uuid;
+        $token->name = 'api';
+
+        $repository->save($token);
+
+        expect($this->sqlLog)->toBe([[
+            'type' => 'execute',
+            'sql' => 'INSERT INTO generated_tokens (id, name) VALUES (?, ?)',
+            'bindings' => [$this->uuid, 'api'],
+        ]])
+            ->and($token->id)->toBe($this->uuid);
+    });
+
+    it('throws RepositoryException for an unset generated key on a connection without RETURNING', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, false);
+        $repository = new RepositoryTestGeneratedKeyTokenRepository(
+            $connection,
+            $this->metadataFactory,
+            $this->hydrator,
+        );
+        $token = new RepositoryTestGeneratedKeyToken();
+
+        expect(fn () => $repository->save($token))
+            ->toThrow(RepositoryException::class, RepositoryTestGeneratedKeyToken::class)
+            ->and(fn () => $repository->save($token))
+            ->toThrow(RepositoryException::class, 'cannot read a generated key back')
+            ->and($this->sqlLog)->toBe([]);
+    });
+
+    it('throws RepositoryException for an unset key that is neither generated nor auto-increment', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, true);
+        $repository = new RepositoryTestPlainKeyTokenRepository($connection, $this->metadataFactory, $this->hydrator);
+        $token = new RepositoryTestPlainKeyToken();
+
+        expect(fn () => $repository->save($token))
+            ->toThrow(RepositoryException::class, "Primary key 'id' of entity")
+            ->and($this->sqlLog)->toBe([]);
+    });
+
+    it('throws RepositoryException for a null key that is neither generated nor auto-increment', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, true);
+        $repository = new RepositoryTestPlainKeyTokenRepository($connection, $this->metadataFactory, $this->hydrator);
+        $token = new RepositoryTestPlainKeyToken();
+        $token->id = null;
+
+        try {
+            $repository->save($token);
+            $this->fail('Expected a RepositoryException for a null primary key');
+        } catch (RepositoryException $e) {
+            expect($e->getMessage())->toContain("Primary key 'id' of entity")
+                ->and($e->getSuggestion())->toContain('generated: true')
+                ->and($this->sqlLog)->toBe([]);
+        }
+    });
+
+    it('treats the entity as persisted after a generated key is read back', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, true, [['id' => $this->uuid]]);
+        $repository = new RepositoryTestGeneratedKeyTokenRepository(
+            $connection,
+            $this->metadataFactory,
+            $this->hydrator,
+        );
+        $token = new RepositoryTestGeneratedKeyToken();
+        $token->name = 'api';
+        $repository->save($token);
+
+        $token->name = 'web';
+        $repository->save($token);
+
+        expect($this->sqlLog[1])->toBe([
+            'type' => 'execute',
+            'sql' => 'UPDATE generated_tokens SET name = ? WHERE id = ?',
+            'bindings' => ['web', $this->uuid],
+        ]);
+    });
+
+    it('throws RepositoryException when RETURNING does not return exactly one row', function (): void {
+        $connection = createReturningSpyConnection($this->sqlLog, true);
+        $repository = new RepositoryTestGeneratedKeyTokenRepository(
+            $connection,
+            $this->metadataFactory,
+            $this->hydrator,
+        );
+
+        expect(fn () => $repository->save(new RepositoryTestGeneratedKeyToken()))
+            ->toThrow(RepositoryException::class, 'RETURNING');
+    });
 });

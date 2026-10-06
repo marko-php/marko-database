@@ -93,6 +93,11 @@ function makeInsertConnection(): ConnectionInterface
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 
@@ -147,6 +152,11 @@ function makeUpdateConnection(): ConnectionInterface
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 
@@ -200,6 +210,11 @@ function makeDeleteConnection(): ConnectionInterface
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 }

@@ -167,6 +167,10 @@ class EntityMetadataFactory
                 throw EntityException::autoIncrementWithoutPrimaryKey($entityClass, $propertyName);
             }
 
+            if ($columnAttr->generated) {
+                $this->validateGeneratedColumn($entityClass, $propertyName, $columnAttr);
+            }
+
             if ($columnAttr->primaryKey) {
                 $primaryKey = $propertyName;
             }
@@ -203,6 +207,7 @@ class EntityMetadataFactory
                 columnType: $columnAttr->type,
                 castClass: $castClass,
                 encrypted: $encrypted,
+                isGenerated: $columnAttr->generated,
             );
         }
 
@@ -297,6 +302,32 @@ class EntityMetadataFactory
         }
 
         return [$timestamps->createdAt, $timestamps->updatedAt];
+    }
+
+    /**
+     * Validate a #[Column(generated: true)] property: only a primary key the
+     * database fills through its default can be generated.
+     *
+     * @param class-string $entityClass
+     *
+     * @throws EntityException
+     */
+    private function validateGeneratedColumn(
+        string $entityClass,
+        string $propertyName,
+        Column $columnAttr,
+    ): void {
+        if (!$columnAttr->primaryKey) {
+            throw EntityException::generatedWithoutPrimaryKey($entityClass, $propertyName);
+        }
+
+        if ($columnAttr->autoIncrement) {
+            throw EntityException::generatedWithAutoIncrement($entityClass, $propertyName);
+        }
+
+        if ($columnAttr->default === null) {
+            throw EntityException::generatedWithoutDefault($entityClass, $propertyName);
+        }
     }
 
     /**

@@ -80,6 +80,11 @@ function createReturnTypeMockConnection(array $queryResult = []): ConnectionInte
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 

@@ -60,4 +60,13 @@ interface ConnectionInterface
      * @return string Driver name
      */
     public function driverName(): string;
+
+    /**
+     * Whether this connection can read values back from an INSERT with
+     * `INSERT ... RETURNING <columns>` through query().
+     *
+     * The repository uses it to read database-generated primary keys back.
+     * Like driverName(), it must not require a live database connection.
+     */
+    public function supportsReturning(): bool;
 }

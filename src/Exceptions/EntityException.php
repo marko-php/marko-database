@@ -68,6 +68,48 @@ class EntityException extends MarkoException
     /**
      * @param class-string $entityClass
      */
+    public static function generatedWithoutPrimaryKey(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Property '$property' in entity '$entityClass' is generated but is not a primary key",
+            context: "Parsing column '$property' in entity '$entityClass'",
+            suggestion: 'Only a primary key can be generated: add primaryKey: true or remove generated: true from the #[Column] attribute',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function generatedWithAutoIncrement(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Property '$property' in entity '$entityClass' is both generated and autoIncrement",
+            context: "Parsing column '$property' in entity '$entityClass'",
+            suggestion: 'Use autoIncrement: true for an integer key from a sequence, or generated: true for a key from an expression default such as gen_random_uuid(), not both',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function generatedWithoutDefault(
+        string $entityClass,
+        string $property,
+    ): self {
+        return new self(
+            message: "Property '$property' in entity '$entityClass' is generated but has no default to generate it",
+            context: "Parsing column '$property' in entity '$entityClass'",
+            suggestion: "Add the database expression that generates the key, e.g. #[Column(primaryKey: true, type: 'uuid', default: 'gen_random_uuid()', generated: true)], or remove generated: true and set the key in PHP",
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
     public static function missingTypeDeclaration(
         string $entityClass,
         string $property,

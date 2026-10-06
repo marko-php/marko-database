@@ -613,3 +613,65 @@ it('clears cached metadata', function (): void {
         ->not->toBe($metadata2)
         ->and($metadata1->tableName)->toBe($metadata2->tableName);
 });
+
+describe('generated primary keys', function (): void {
+    it('marks a generated primary key as generated in the property metadata', function (): void {
+        $entity = new #[Table('generated_keys')] class () extends Entity
+        {
+            #[Column(primaryKey: true, type: 'uuid', default: 'gen_random_uuid()', generated: true)]
+            public string $id;
+        };
+
+        $metadata = $this->factory->parse($entity::class);
+
+        expect($metadata->properties['id']->isGenerated)->toBeTrue();
+    });
+
+    it('leaves isGenerated false when the column does not declare generated', function (): void {
+        $entity = new #[Table('plain_keys')] class () extends Entity
+        {
+            #[Column(primaryKey: true, type: 'uuid', default: 'gen_random_uuid()')]
+            public string $id;
+        };
+
+        $metadata = $this->factory->parse($entity::class);
+
+        expect($metadata->properties['id']->isGenerated)->toBeFalse();
+    });
+
+    it('throws when generated is declared on a column that is not the primary key', function (): void {
+        $entity = new #[Table('generated_non_key')] class () extends Entity
+        {
+            #[Column(primaryKey: true)]
+            public string $id;
+
+            #[Column(type: 'uuid', default: 'gen_random_uuid()', generated: true)]
+            public string $token;
+        };
+
+        expect(fn () => $this->factory->parse($entity::class))
+            ->toThrow(EntityException::class, "Property 'token'");
+    });
+
+    it('throws when generated is combined with autoIncrement', function (): void {
+        $entity = new #[Table('generated_auto_increment')] class () extends Entity
+        {
+            #[Column(primaryKey: true, autoIncrement: true, default: 'nextval()', generated: true)]
+            public int $id;
+        };
+
+        expect(fn () => $this->factory->parse($entity::class))
+            ->toThrow(EntityException::class, 'both generated and autoIncrement');
+    });
+
+    it('throws when generated is declared without a default', function (): void {
+        $entity = new #[Table('generated_without_default')] class () extends Entity
+        {
+            #[Column(primaryKey: true, type: 'uuid', generated: true)]
+            public string $id;
+        };
+
+        expect(fn () => $this->factory->parse($entity::class))
+            ->toThrow(EntityException::class, 'has no default');
+    });
+});

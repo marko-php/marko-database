@@ -106,6 +106,11 @@ PHP;
             {
                 return 'sqlite';
             }
+
+            public function supportsReturning(): bool
+            {
+                return false;
+            }
         };
 
         // Mock repository
@@ -219,6 +224,11 @@ PHP;
             {
                 return 'sqlite';
             }
+
+            public function supportsReturning(): bool
+            {
+                return false;
+            }
         };
 
         $repository = $this->createMock(MigrationRepository::class);
@@ -302,6 +312,11 @@ PHP;
             public function driverName(): string
             {
                 return 'sqlite';
+            }
+
+            public function supportsReturning(): bool
+            {
+                return false;
             }
         };
 
@@ -437,6 +452,11 @@ PHP;
             public function driverName(): string
             {
                 return 'sqlite';
+            }
+
+            public function supportsReturning(): bool
+            {
+                return false;
             }
         };
 

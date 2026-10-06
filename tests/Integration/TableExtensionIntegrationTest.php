@@ -101,6 +101,11 @@ function createSqliteConnection(): ConnectionInterface
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 

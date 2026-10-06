@@ -51,4 +51,11 @@ describe('ConnectionInterface', function (): void {
             ->and($prepareParams[0]->getName())->toBe('sql')
             ->and($prepareParams[0]->getType()?->getName())->toBe('string');
     });
+
+    it('declares supportsReturning on ConnectionInterface', function (): void {
+        $method = new ReflectionMethod(ConnectionInterface::class, 'supportsReturning');
+
+        expect($method->getReturnType()?->getName())->toBe('bool')
+            ->and($method->getParameters())->toBeEmpty();
+    });
 });

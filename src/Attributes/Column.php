@@ -6,6 +6,13 @@ namespace Marko\Database\Attributes;
 
 use Attribute;
 
+/**
+ * Maps an entity property to a table column.
+ *
+ * Set generated: true on a primary key whose value the database produces
+ * through its default (e.g. gen_random_uuid()): the repository leaves the
+ * key out of the INSERT and reads it back with INSERT ... RETURNING.
+ */
 #[Attribute(Attribute::TARGET_PROPERTY)]
 readonly class Column
 {
@@ -21,5 +28,6 @@ readonly class Column
         public ?string $onDelete = null,
         public ?string $onUpdate = null,
         public ?bool $nullable = null,
+        public bool $generated = false,
     ) {}
 }

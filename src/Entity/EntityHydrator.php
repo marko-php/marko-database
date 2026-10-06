@@ -163,6 +163,9 @@ class EntityHydrator
     /**
      * Extract entity data to a row array for persistence.
      *
+     * An uninitialized primary key is left out of the row, so the caller can
+     * let the database generate it or report that it was never set.
+     *
      * @return array<string, mixed> Column name => value
      *
      * @throws EntityException
@@ -176,6 +179,11 @@ class EntityHydrator
 
         foreach ($metadata->properties as $propName => $propMeta) {
             $property = $reflection->getProperty($propName);
+
+            if ($propMeta->isPrimaryKey && !$property->isInitialized($entity)) {
+                continue;
+            }
+
             $value = $property->getValue($entity);
 
             $row[$propMeta->columnName] = $this->toDatabaseValue($value, $propMeta);

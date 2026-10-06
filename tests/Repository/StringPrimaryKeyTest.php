@@ -152,6 +152,11 @@ function makeStringPkConnection(array $queryResults = [], array &$executedSql = 
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 

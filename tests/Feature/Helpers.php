@@ -78,6 +78,11 @@ final class Helpers
                 return 'sqlite';
             }
 
+            public function supportsReturning(): bool
+            {
+                return false;
+            }
+
             public function beginTransaction(): void
             {
                 $this->inTransaction = true;

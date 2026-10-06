@@ -671,6 +671,11 @@ function makeSpecConnection(array $rows = []): ConnectionInterface
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 

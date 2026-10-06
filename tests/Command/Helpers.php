@@ -225,6 +225,11 @@ final class Helpers
             {
                 return 'sqlite';
             }
+
+            public function supportsReturning(): bool
+            {
+                return false;
+            }
         };
     }
 

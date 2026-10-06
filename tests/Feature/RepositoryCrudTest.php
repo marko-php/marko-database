@@ -160,6 +160,11 @@ describe('Repository CRUD Operations', function (): void {
             {
                 return 'sqlite';
             }
+
+            public function supportsReturning(): bool
+            {
+                return false;
+            }
         };
 
         $metadataFactory = new EntityMetadataFactory();
@@ -264,6 +269,11 @@ describe('Repository CRUD Operations', function (): void {
             {
                 return 'sqlite';
             }
+
+            public function supportsReturning(): bool
+            {
+                return false;
+            }
         };
 
         $metadataFactory = new EntityMetadataFactory();
@@ -318,6 +328,11 @@ describe('Repository CRUD Operations', function (): void {
             public function driverName(): string
             {
                 return 'sqlite';
+            }
+
+            public function supportsReturning(): bool
+            {
+                return false;
             }
         };
 
@@ -374,6 +389,11 @@ describe('Repository CRUD Operations', function (): void {
             public function driverName(): string
             {
                 return 'sqlite';
+            }
+
+            public function supportsReturning(): bool
+            {
+                return false;
             }
         };
 
@@ -438,6 +458,11 @@ describe('Repository CRUD Operations', function (): void {
             public function driverName(): string
             {
                 return 'sqlite';
+            }
+
+            public function supportsReturning(): bool
+            {
+                return false;
             }
         };
 

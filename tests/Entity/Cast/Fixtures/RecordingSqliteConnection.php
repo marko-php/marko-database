@@ -74,6 +74,11 @@ class RecordingSqliteConnection implements ConnectionInterface
         return 'sqlite';
     }
 
+    public function supportsReturning(): bool
+    {
+        return false;
+    }
+
     /**
      * Run raw DDL (CREATE TABLE) without recording it.
      */

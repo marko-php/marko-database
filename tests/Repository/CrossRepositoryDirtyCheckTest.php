@@ -98,6 +98,11 @@ class CrossRepoRecordingConnection implements ConnectionInterface
     {
         return 'test';
     }
+
+    public function supportsReturning(): bool
+    {
+        return false;
+    }
 }
 
 /**

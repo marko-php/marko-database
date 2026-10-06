@@ -277,6 +277,42 @@ it('extracts entity data to row array for persistence', function (): void {
     ]);
 });
 
+describe('extracting the primary key', function (): void {
+    beforeEach(function (): void {
+        $this->entity = new #[Table('hydrator_generated_keys')] class () extends Entity
+        {
+            #[Column(primaryKey: true, type: 'uuid', default: 'gen_random_uuid()', generated: true)]
+            public ?string $id;
+
+            #[Column]
+            public string $title = 'Draft';
+        };
+        $this->metadata = new EntityMetadataFactory()->parse($this->entity::class);
+    });
+
+    it('omits an uninitialized primary key from the extracted row', function (): void {
+        $row = new EntityHydrator()->extract($this->entity, $this->metadata);
+
+        expect($row)->toBe(['title' => 'Draft']);
+    });
+
+    it('extracts a null primary key as null', function (): void {
+        $this->entity->id = null;
+
+        $row = new EntityHydrator()->extract($this->entity, $this->metadata);
+
+        expect($row)->toBe(['id' => null, 'title' => 'Draft']);
+    });
+
+    it('extracts an initialized string primary key', function (): void {
+        $this->entity->id = '0b6e0f4c-2f5a-4e8e-9d6a-3f1c2b7a9e10';
+
+        $row = new EntityHydrator()->extract($this->entity, $this->metadata);
+
+        expect($row)->toBe(['id' => '0b6e0f4c-2f5a-4e8e-9d6a-3f1c2b7a9e10', 'title' => 'Draft']);
+    });
+});
+
 it('tracks whether entity is new (no ID) or persisted (has ID)', function (): void {
     $hydrator = new EntityHydrator();
     $metadata = createUserMetadata();

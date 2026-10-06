@@ -110,6 +110,11 @@ function makeFobConnection(array $rows = []): ConnectionInterface
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 
@@ -167,6 +172,11 @@ function makeFobRecordingConnection(array $rows, array &$queries): ConnectionInt
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 }

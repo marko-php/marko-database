@@ -70,6 +70,11 @@ function createTrackingConnection(
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 
@@ -134,6 +139,11 @@ function createOrderTrackingConnection(
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 
@@ -195,6 +205,11 @@ function createRunTrackingConnection(
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
     };
 }

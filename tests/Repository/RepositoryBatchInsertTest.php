@@ -19,6 +19,7 @@ use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Events\EntityCreated;
 use Marko\Database\Events\EntityCreating;
 use Marko\Database\Exceptions\BatchInsertException;
+use Marko\Database\Exceptions\RepositoryException;
 use Marko\Database\Repository\Repository;
 use RuntimeException;
 use Throwable;
@@ -161,6 +162,11 @@ function makeBatchSpyConnection(
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 
@@ -223,6 +229,11 @@ function makeBatchTransactionConnection(
         public function driverName(): string
         {
             return 'sqlite';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return false;
         }
 
         public function beginTransaction(): void
@@ -649,6 +660,11 @@ function makePgsqlSpyConnection(
         {
             return 'pgsql';
         }
+
+        public function supportsReturning(): bool
+        {
+            return true;
+        }
     };
 }
 
@@ -712,6 +728,11 @@ function makePgsqlTransactionConnection(
         public function driverName(): string
         {
             return 'pgsql';
+        }
+
+        public function supportsReturning(): bool
+        {
+            return true;
         }
 
         public function beginTransaction(): void
@@ -966,3 +987,145 @@ it(
             ->and($user2->id)->toBe(8);
     },
 );
+
+// ── Database-generated keys ────────────────────────────────────────────────────
+
+#[Table('batch_generated_tokens')]
+class BatchGeneratedToken extends Entity
+{
+    #[Column(primaryKey: true, type: 'uuid', default: 'gen_random_uuid()', generated: true)]
+    public ?string $id;
+
+    #[Column]
+    public string $label = '';
+}
+
+class BatchGeneratedTokenRepository extends Repository
+{
+    protected const string ENTITY_CLASS = BatchGeneratedToken::class;
+}
+
+function makeBatchGeneratedToken(
+    string $label,
+): BatchGeneratedToken {
+    $token = new BatchGeneratedToken();
+    $token->label = $label;
+
+    return $token;
+}
+
+/**
+ * A connection stub that reports RETURNING support under any driver name and records query() calls.
+ *
+ * @param list<array<string, mixed>> $returningRows
+ * @param list<array{sql: string, bindings: array<mixed>}> $queries
+ */
+function makeReturningStubConnection(
+    array $returningRows,
+    array &$queries,
+    string $driverName,
+): ConnectionInterface {
+    $connection = test()->createStub(ConnectionInterface::class);
+    $connection->method('driverName')->willReturn($driverName);
+    $connection->method('supportsReturning')->willReturn(true);
+    $connection->method('query')->willReturnCallback(
+        function (string $sql, array $bindings = []) use ($returningRows, &$queries): array {
+            $queries[] = ['sql' => $sql, 'bindings' => $bindings];
+
+            return $returningRows;
+        },
+    );
+
+    return $connection;
+}
+
+describe('database-generated keys in a batch', function (): void {
+    it('reads generated keys back in insert order with RETURNING', function (): void {
+        $sqlLog = [];
+        $connection = makePgsqlSpyConnection(
+            [['id' => 'a0e1c0de-0000-4000-8000-000000000001'], ['id' => 'a0e1c0de-0000-4000-8000-000000000002']],
+            $sqlLog,
+        );
+        $repository = new BatchGeneratedTokenRepository(
+            $connection,
+            new EntityMetadataFactory(),
+            new EntityHydrator(),
+        );
+        $first = makeBatchGeneratedToken('first');
+        $second = makeBatchGeneratedToken('second');
+
+        $repository->insertBatch([$first, $second]);
+
+        expect($sqlLog[0]['sql'])->toBe('INSERT INTO batch_generated_tokens (label) VALUES (?), (?) RETURNING id')
+            ->and($sqlLog[0]['bindings'])->toBe(['first', 'second'])
+            ->and($first->id)->toBe('a0e1c0de-0000-4000-8000-000000000001')
+            ->and($second->id)->toBe('a0e1c0de-0000-4000-8000-000000000002');
+    });
+
+    it(
+        'uses RETURNING for auto-increment keys when the connection supports it regardless of driver name',
+        function (): void {
+            $queries = [];
+            $connection = makeReturningStubConnection([['id' => '11'], ['id' => '12']], $queries, 'cockroach');
+            $repository = new BatchUserRepository($connection, new EntityMetadataFactory(), new EntityHydrator());
+            $alice = new BatchUser();
+            $alice->name = 'Alice';
+            $bob = new BatchUser();
+            $bob->name = 'Bob';
+
+            $repository->insertBatch([$alice, $bob]);
+
+            expect($queries[0]['sql'])->toEndWith('RETURNING id')
+                ->and($alice->id)->toBe(11)
+                ->and($bob->id)->toBe(12);
+        },
+    );
+
+    it(
+        'throws RepositoryException for unset generated keys in a batch on a connection without RETURNING',
+        function (): void {
+            $sqlLog = [];
+            $repository = new BatchGeneratedTokenRepository(
+                makeBatchSpyConnection($sqlLog),
+                new EntityMetadataFactory(),
+                new EntityHydrator(),
+            );
+
+            expect(fn () => $repository->insertBatch([makeBatchGeneratedToken('a'), makeBatchGeneratedToken('b')]))
+                ->toThrow(RepositoryException::class, 'cannot read a generated key back')
+                ->and($sqlLog)->toBe([]);
+        },
+    );
+
+    it(
+        'throws RepositoryException for unset keys that are neither generated nor auto-increment in a batch',
+        function (): void {
+            $sqlLog = [];
+            $repository = new BatchStringPkRepository(
+                makeBatchSpyConnection($sqlLog),
+                new EntityMetadataFactory(),
+                new EntityHydrator(),
+            );
+            $item = new BatchStringPk();
+            $item->label = 'No key';
+
+            expect(fn () => $repository->insertBatch([$item]))
+                ->toThrow(RepositoryException::class, "Primary key 'uuid' of entity")
+                ->and($sqlLog)->toBe([]);
+        },
+    );
+
+    it('throws a clear exception for a batch that mixes set and unset generated keys', function (): void {
+        $sqlLog = [];
+        $repository = new BatchGeneratedTokenRepository(
+            makePgsqlSpyConnection([], $sqlLog),
+            new EntityMetadataFactory(),
+            new EntityHydrator(),
+        );
+        $withKey = makeBatchGeneratedToken('with key');
+        $withKey->id = 'a0e1c0de-0000-4000-8000-000000000003';
+
+        expect(fn () => $repository->insertBatch([$withKey, makeBatchGeneratedToken('without key')]))
+            ->toThrow(BatchInsertException::class, "with and without a 'id' key: entity at index 1");
+    });
+});

@@ -351,6 +351,11 @@ function makeRepository(QueryBuilderInterface $stubBuilder): ProductRepository
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 
     $factory = new readonly class ($stubBuilder) implements QueryBuilderFactoryInterface
@@ -506,6 +511,11 @@ describe('Repository matching()', function (): void {
             public function driverName(): string
             {
                 return 'sqlite';
+            }
+
+            public function supportsReturning(): bool
+            {
+                return false;
             }
         };
 

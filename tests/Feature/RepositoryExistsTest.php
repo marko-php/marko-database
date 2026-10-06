@@ -98,6 +98,11 @@ function makeExistsConnection(array $rows, array &$log): ConnectionInterface
         {
             return 'sqlite';
         }
+
+        public function supportsReturning(): bool
+        {
+            return false;
+        }
     };
 }
 

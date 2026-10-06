@@ -15,6 +15,7 @@ use Marko\Database\Entity\EntityCollection;
 use Marko\Database\Entity\EntityHydrator;
 use Marko\Database\Entity\EntityMetadata;
 use Marko\Database\Entity\EntityMetadataFactory;
+use Marko\Database\Entity\PropertyMetadata;
 use Marko\Database\Entity\RelationshipLoader;
 use Marko\Database\Events\EntityCreated;
 use Marko\Database\Events\EntityCreating;
@@ -322,8 +323,13 @@ abstract class Repository implements RepositoryInterface
             $this->applyInsertTimestamps($entity);
         }
 
-        $allRows = $this->extractBatchRows($entities);
+        $allRows = $this->extractBatchRows($entities, requireKey: true);
         $columns = array_keys($allRows[0]);
+        $readsGeneratedKeys = $this->omitsGeneratedKey($allRows[0]);
+
+        if ($readsGeneratedKeys) {
+            $this->assertCanReadGeneratedKey();
+        }
 
         // Build multi-row INSERT SQL
         $placeholderRow = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
@@ -344,14 +350,18 @@ abstract class Repository implements RepositoryInterface
             }
         }
 
-        $write = function () use ($entities, $sql, $bindings): void {
+        $write = function () use ($entities, $sql, $bindings, $readsGeneratedKeys): void {
             $pkProperty = $this->metadata->getPrimaryKeyProperty();
             $isAutoIncrement = $pkProperty?->isAutoIncrement === true;
 
-            if ($isAutoIncrement && $this->connection->driverName() === 'pgsql') {
-                // PostgreSQL: use INSERT ... RETURNING <pk> to get exact ids in insert order.
-                // lastInsertId() on pgsql resolves to LASTVAL() (the LAST row's id), so
-                // the MySQL offset-arithmetic strategy would produce shifted ids.
+            if ($pkProperty !== null
+                && ($isAutoIncrement || $readsGeneratedKeys)
+                && $this->connection->supportsReturning()
+            ) {
+                // INSERT ... RETURNING <pk> returns exact keys in insert order. On
+                // PostgreSQL lastInsertId() resolves to LASTVAL() (the LAST row's id),
+                // so the MySQL offset-arithmetic strategy would produce shifted ids,
+                // and a generated key has no lastInsertId() at all.
                 $pkColumn = $pkProperty->columnName;
                 $returningRows = $this->connection->query("$sql RETURNING $pkColumn", $bindings);
 
@@ -362,10 +372,8 @@ abstract class Repository implements RepositoryInterface
                     throw BatchInsertException::returningRowCountMismatch($expectedCount, $actualCount, $pkColumn);
                 }
 
-                $reflection = new ReflectionClass($entities[0]);
-                foreach ($entities as $offset => $entity) {
-                    $property = $reflection->getProperty($this->metadata->primaryKey);
-                    $property->setValue($entity, (int) $returningRows[$offset][$pkColumn]);
+                foreach (array_values($entities) as $offset => $entity) {
+                    $this->assignPrimaryKey($entity, $pkProperty, $returningRows[$offset][$pkColumn]);
                 }
             } else {
                 $this->connection->execute($sql, $bindings);
@@ -442,7 +450,7 @@ abstract class Repository implements RepositoryInterface
             $this->touchUpdatedAt($entity, $now);
         }
 
-        $rows = $this->extractBatchRows($entities);
+        $rows = $this->extractBatchRows($entities, requireKey: false);
         $uniqueColumns = $this->propertiesToColumns($uniqueBy, '$uniqueBy');
 
         if ($update === null) {
@@ -533,16 +541,33 @@ abstract class Repository implements RepositoryInterface
     /**
      * Extract one row per entity and verify every row has the same columns.
      *
+     * With $requireKey, an unset key that the database does not fill throws
+     * (insertBatch); upsert passes false and leaves such a key to the database.
+     *
      * @param array<Entity> $entities
      * @return list<array<string, mixed>>
-     * @throws BatchInsertException
+     * @throws BatchInsertException|EntityException|RepositoryException
      */
-    private function extractBatchRows(array $entities): array
-    {
-        $rows = array_values(array_map(fn (Entity $entity): array => $this->extractBatchRow($entity), $entities));
+    private function extractBatchRows(
+        array $entities,
+        bool $requireKey,
+    ): array {
+        $rows = array_values(array_map(
+            fn (Entity $entity): array => $this->withoutDatabaseFilledKey(
+                $this->hydrator->extract($entity, $this->metadata),
+                $requireKey,
+            ),
+            $entities,
+        ));
         $expectedColumns = array_keys($rows[0]);
+        $pkProperty = $this->metadata->getPrimaryKeyProperty();
+        $firstOmitsGeneratedKey = $this->omitsGeneratedKey($rows[0]);
 
         foreach ($rows as $index => $row) {
+            if ($pkProperty !== null && $this->omitsGeneratedKey($row) !== $firstOmitsGeneratedKey) {
+                throw BatchInsertException::mixedGeneratedKeys($entities[0]::class, $pkProperty->name, $index);
+            }
+
             if (array_keys($row) !== $expectedColumns) {
                 throw BatchInsertException::columnSetMismatch($entities[0]::class, $index);
             }
@@ -552,23 +577,83 @@ abstract class Repository implements RepositoryInterface
     }
 
     /**
-     * Extract row data for a single entity, excluding auto-increment PK if null.
+     * Leave a primary key the database fills out of an extracted row.
      *
+     * An unset or null auto-increment or generated key is removed so the
+     * database assigns it. Any other unset or null key throws when $requireKey
+     * is true, instead of reaching the database as a NULL key.
+     *
+     * @param array<string, mixed> $row
      * @return array<string, mixed>
+     * @throws RepositoryException
      */
-    private function extractBatchRow(Entity $entity): array
-    {
-        $data = $this->hydrator->extract($entity, $this->metadata);
-
+    private function withoutDatabaseFilledKey(
+        array $row,
+        bool $requireKey = true,
+    ): array {
         $pkProperty = $this->metadata->getPrimaryKeyProperty();
-        if ($pkProperty?->isAutoIncrement === true) {
-            $pkColumn = $pkProperty->columnName;
-            if ($data[$pkColumn] === null) {
-                unset($data[$pkColumn]);
-            }
+
+        if ($pkProperty === null || ($row[$pkProperty->columnName] ?? null) !== null) {
+            return $row;
         }
 
-        return $data;
+        if ($pkProperty->isAutoIncrement || $pkProperty->isGenerated) {
+            unset($row[$pkProperty->columnName]);
+
+            return $row;
+        }
+
+        if ($requireKey) {
+            throw RepositoryException::primaryKeyNotSet($this->metadata->entityClass, $pkProperty->name);
+        }
+
+        return $row;
+    }
+
+    /**
+     * Whether a row leaves out a database-generated key that must be read back.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function omitsGeneratedKey(
+        array $row,
+    ): bool {
+        $pkProperty = $this->metadata->getPrimaryKeyProperty();
+
+        return $pkProperty?->isGenerated === true && !array_key_exists($pkProperty->columnName, $row);
+    }
+
+    /**
+     * Fail before inserting when a generated key can't be read back from this connection.
+     *
+     * @throws RepositoryException
+     */
+    private function assertCanReadGeneratedKey(): void
+    {
+        if ($this->connection->supportsReturning()) {
+            return;
+        }
+
+        throw RepositoryException::generatedKeyNotReadable(
+            $this->metadata->entityClass,
+            $this->metadata->primaryKey,
+            $this->connection->driverName(),
+        );
+    }
+
+    /**
+     * Set a key value read back from the database, converted through the key property's cast.
+     *
+     * @throws EntityException
+     */
+    private function assignPrimaryKey(
+        Entity $entity,
+        PropertyMetadata $pkProperty,
+        mixed $value,
+    ): void {
+        new ReflectionClass($entity)
+            ->getProperty($pkProperty->name)
+            ->setValue($entity, $this->hydrator->toPhpValue($value, $pkProperty));
     }
 
     /**
@@ -827,21 +912,25 @@ abstract class Repository implements RepositoryInterface
 
     /**
      * Insert a new entity.
+     *
+     * An unset or null auto-increment or generated key is left to the database.
+     * A generated key is read back with INSERT ... RETURNING; on a connection
+     * without RETURNING, and for any other unset key, this throws.
+     *
+     * @throws EntityException|RepositoryException
      */
     protected function insert(
         Entity $entity,
     ): void {
         $this->applyInsertTimestamps($entity);
 
-        $data = $this->hydrator->extractAll($entity, $this->metadata);
+        $data = $this->withoutDatabaseFilledKey($this->hydrator->extractAll($entity, $this->metadata));
 
-        // Remove primary key if it's auto-increment and null
         $pkProperty = $this->metadata->getPrimaryKeyProperty();
-        if ($pkProperty?->isAutoIncrement === true) {
-            $pkColumn = $pkProperty->columnName;
-            if (array_key_exists($pkColumn, $data) && $data[$pkColumn] === null) {
-                unset($data[$pkColumn]);
-            }
+        $readsGeneratedKey = $this->omitsGeneratedKey($data);
+
+        if ($readsGeneratedKey) {
+            $this->assertCanReadGeneratedKey();
         }
 
         $columns = array_keys($data);
@@ -854,7 +943,24 @@ abstract class Repository implements RepositoryInterface
             implode(', ', $placeholders),
         );
 
-        $this->connection->execute($sql, array_values($data));
+        if ($readsGeneratedKey && $pkProperty !== null) {
+            // The database generated the key: read it back in the same statement.
+            $pkColumn = $pkProperty->columnName;
+            $rows = $this->connection->query("$sql RETURNING $pkColumn", array_values($data));
+
+            if (count($rows) !== 1) {
+                throw RepositoryException::returningRowCountMismatch(
+                    $this->metadata->entityClass,
+                    $pkColumn,
+                    1,
+                    count($rows),
+                );
+            }
+
+            $this->assignPrimaryKey($entity, $pkProperty, $rows[0][$pkColumn]);
+        } else {
+            $this->connection->execute($sql, array_values($data));
+        }
 
         // Set the generated ID on the entity
         if ($pkProperty?->isAutoIncrement === true) {
