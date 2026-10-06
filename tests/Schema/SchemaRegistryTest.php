@@ -24,6 +24,7 @@ use Marko\Database\Tests\Schema\Fixtures\ProductEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductFkExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductIndexExtenderEntity;
+use Marko\Database\Tests\Schema\Fixtures\ProductLongIndexExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductPartialIndexExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductSecondExtenderEntity;
 use Marko\Database\Tests\Schema\Fixtures\ProductSynonymExtenderEntity;
@@ -229,6 +230,11 @@ it('merges extender indexes into the parent table', function (): void {
 
     expect($table->indexes)->toHaveCount(1)
         ->and($table->indexes[0]->name)->toBe('idx_products_sku');
+});
+
+it('rejects an over-long index name declared by an extender', function (): void {
+    expect(fn () => $this->registry->registerEntities([ProductEntity::class, ProductLongIndexExtenderEntity::class]))
+        ->toThrow(EntityException::class, ProductLongIndexExtenderEntity::class);
 });
 
 it('keeps the where predicate on indexes merged from extenders', function (): void {

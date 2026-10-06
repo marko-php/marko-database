@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Marko\Database\Exceptions;
 
 use Marko\Core\Exceptions\MarkoException;
+use Marko\Database\Schema\IdentifierName;
 use Throwable;
 
 /**
@@ -402,6 +403,24 @@ class EntityException extends MarkoException
             message: "Column '$columnName' is defined by both '$classA' and '$classB'",
             context: 'Merging extender columns into the parent table schema',
             suggestion: 'Rename the column in one of the extenders to avoid the conflict',
+        );
+    }
+
+    /**
+     * @param class-string $entityClass
+     */
+    public static function indexNameTooLong(
+        string $entityClass,
+        string $tableName,
+        string $indexName,
+        int $byteLength,
+    ): self {
+        $maxBytes = IdentifierName::MAX_BYTES;
+
+        return new self(
+            message: "Index name '$indexName' declared by entity '$entityClass' is $byteLength bytes, over the $maxBytes bytes limit",
+            context: "Building the schema of table '$tableName' from #[Index] on entity '$entityClass'. PostgreSQL silently truncates a longer name and MySQL rejects it",
+            suggestion: "Shorten #[Index(name: '...')] to $maxBytes bytes or fewer. Multibyte characters count as more than one byte",
         );
     }
 

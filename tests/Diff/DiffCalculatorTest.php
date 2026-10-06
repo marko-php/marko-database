@@ -865,6 +865,90 @@ describe('DiffCalculator', function (): void {
         },
     );
 
+    it('keeps the derived unique index name users_email_unique unchanged', function (): void {
+        $diff = $this->calculator->calculate(
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', unique: true))],
+            ['users' => uniqueDiffUsers(new Column(name: 'email', type: 'varchar', length: 255))],
+        );
+
+        expect($diff->tablesToAlter['users']->indexesToAdd[0]->name)->toBe('users_email_unique');
+    });
+
+    it('shortens a derived unique index name over 63 bytes', function (): void {
+        $table = fn (bool $unique): Table => new Table(
+            name: 'customer_subscription_events',
+            columns: [
+                new Column(name: 'id', type: 'integer', primaryKey: true, autoIncrement: true),
+                new Column(name: 'external_billing_reference_id', type: 'varchar', length: 191, unique: $unique),
+            ],
+        );
+
+        $diff = $this->calculator->calculate(
+            ['customer_subscription_events' => $table(true)],
+            ['customer_subscription_events' => $table(false)],
+        );
+        $full = 'customer_subscription_events_external_billing_reference_id_unique';
+
+        expect($diff->tablesToAlter['customer_subscription_events']->indexesToAdd)->toEqual([
+            new Index(
+                name: 'customer_subscription_events_external_billing_r_' . hash('crc32b', $full) . '_unique',
+                columns: ['external_billing_reference_id'],
+                type: IndexType::Unique,
+            ),
+        ]);
+    });
+
+    it('shortens a derived foreign key replacement index name over 63 bytes', function (): void {
+        $table = fn (bool $unique): Table => new Table(
+            name: 'customer_subscription_events',
+            columns: [
+                new Column(name: 'id', type: 'integer', primaryKey: true, autoIncrement: true),
+                new Column(
+                    name: 'billing_account_reference_number',
+                    type: 'integer',
+                    unique: $unique,
+                    references: $unique ? null : 'billing_accounts.id',
+                ),
+            ],
+            indexes: $unique ? [new Index(
+                name: 'billing_account_reference_number',
+                columns: ['billing_account_reference_number'],
+                type: IndexType::Unique,
+            )] : [],
+        );
+
+        $diff = $this->calculator->calculate(
+            ['customer_subscription_events' => $table(false)],
+            ['customer_subscription_events' => $table(true)],
+        );
+        $full = 'customer_subscription_events_billing_account_reference_number_index';
+        $name = $diff->tablesToAlter['customer_subscription_events']->indexesToAdd[0]->name;
+
+        expect($name)->toBe('customer_subscription_events_billing_account_ref_' . hash('crc32b', $full) . '_index')
+            ->and(strlen($name))->toBeLessThanOrEqual(63);
+    });
+
+    it('gives two long unique columns sharing a prefix different derived names', function (): void {
+        $table = fn (bool $unique): Table => new Table(
+            name: 'customer_subscription_events',
+            columns: [
+                new Column(name: 'id', type: 'integer', primaryKey: true, autoIncrement: true),
+                new Column(name: 'external_billing_reference_primary', type: 'varchar', unique: $unique),
+                new Column(name: 'external_billing_reference_secondary', type: 'varchar', unique: $unique),
+            ],
+        );
+
+        $diff = $this->calculator->calculate(
+            ['customer_subscription_events' => $table(true)],
+            ['customer_subscription_events' => $table(false)],
+        );
+        [$first, $second] = $diff->tablesToAlter['customer_subscription_events']->indexesToAdd;
+
+        expect($first->name)->not->toBe($second->name)
+            ->and(strlen($first->name))->toBeLessThanOrEqual(63)
+            ->and(strlen($second->name))->toBeLessThanOrEqual(63);
+    });
+
     it('keeps a non-unique index on a foreign key column', function (): void {
         $diff = $this->calculator->calculate(
             ['users' => uniqueDiffUsers(new Column(name: 'team_id', type: 'integer', references: 'teams.id'))],

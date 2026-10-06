@@ -162,7 +162,9 @@ class SchemaRegistry
                         }
 
                         $indexSources[$idx->name] = $extenderClass;
-                        $table = $table->withIndex($this->schemaBuilder->buildIndex($idx));
+                        $table = $table->withIndex(
+                            $this->schemaBuilder->buildIndex($idx, $extenderClass, $parentMetadata->tableName),
+                        );
                     }
 
                     // Merge foreign keys (use parent table name for FK name generation)

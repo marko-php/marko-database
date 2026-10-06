@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Marko\Database\Entity;
 
+use Marko\Database\Exceptions\EntityException;
 use Marko\Database\Schema\Column;
 use Marko\Database\Schema\ForeignKey;
+use Marko\Database\Schema\IdentifierName;
 use Marko\Database\Schema\Index;
 use Marko\Database\Schema\IndexType;
 use Marko\Database\Schema\Table;
@@ -29,6 +31,8 @@ class SchemaBuilder
 
     /**
      * Build a Table schema from EntityMetadata.
+     *
+     * @throws EntityException When a declared index name is longer than 63 bytes
      */
     public function build(
         EntityMetadata $metadata,
@@ -39,7 +43,7 @@ class SchemaBuilder
         );
 
         $indexes = array_map(
-            fn (IndexMetadata $idx) => $this->buildIndex($idx),
+            fn (IndexMetadata $idx) => $this->buildIndex($idx, $metadata->entityClass, $metadata->tableName),
             $metadata->indexes,
         );
 
@@ -77,10 +81,28 @@ class SchemaBuilder
 
     /**
      * Build an Index schema from IndexMetadata.
+     *
+     * A declared name is never shortened: one over 63 bytes is rejected, since PostgreSQL would silently truncate
+     * it and MySQL would refuse it.
+     *
+     * @param class-string $entityClass The entity that declares the index, named in the error
+     * @param string $tableName The table the index belongs to, named in the error
+     * @throws EntityException When the declared name is longer than 63 bytes
      */
     public function buildIndex(
         IndexMetadata $metadata,
+        string $entityClass,
+        string $tableName,
     ): Index {
+        if (!IdentifierName::fits($metadata->name)) {
+            throw EntityException::indexNameTooLong(
+                entityClass: $entityClass,
+                tableName: $tableName,
+                indexName: $metadata->name,
+                byteLength: IdentifierName::byteLength($metadata->name),
+            );
+        }
+
         return new Index(
             name: $metadata->name,
             columns: $metadata->columns,
@@ -129,8 +151,8 @@ class SchemaBuilder
 
             [$referencedTable, $referencedColumn] = $parts;
 
-            // Generate FK name: fk_{table}_{column}
-            $fkName = "fk_{$tableName}_$column->name";
+            // FK name: fk_{table}_{column}, shortened to 63 bytes when longer
+            $fkName = IdentifierName::derive("{$tableName}_$column->name", prefix: 'fk_');
 
             $foreignKeys[] = new ForeignKey(
                 name: $fkName,

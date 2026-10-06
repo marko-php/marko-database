@@ -6,6 +6,7 @@ namespace Marko\Database\Diff;
 
 use Marko\Database\Schema\Column;
 use Marko\Database\Schema\ForeignKey;
+use Marko\Database\Schema\IdentifierName;
 use Marko\Database\Schema\Index;
 use Marko\Database\Schema\IndexType;
 use Marko\Database\Schema\Table;
@@ -175,7 +176,7 @@ class DiffCalculator
 
     /**
      * The unique index each existing `unique: true` column (not a primary key) implies, named
-     * `<table>_<column>_unique`.
+     * `<table>_<column>_unique` (shortened to 63 bytes by IdentifierName::derive()).
      *
      * A column the entity already covers with a declared single-column unique index gets none, and neither does a
      * column being added: its ADD COLUMN declares UNIQUE inline.
@@ -204,7 +205,7 @@ class DiffCalculator
             }
 
             $indexes[] = new Index(
-                name: "{$entityTable->name}_{$column->name}_unique",
+                name: IdentifierName::derive("{$entityTable->name}_$column->name", suffix: '_unique'),
                 columns: [$column->name],
                 type: IndexType::Unique,
             );
@@ -328,7 +329,8 @@ class DiffCalculator
     /**
      * A plain `<table>_<column>_index` for each foreign key column whose unique index is dropped when nothing else
      * would index it any more: MySQL refuses to drop the last index a foreign key uses. Once added, it is kept as
-     * the foreign key column's index (see findIndexesToDrop()).
+     * the foreign key column's index (see findIndexesToDrop()). Its name is shortened to 63 bytes like
+     * every derived name.
      *
      * @param array<Index> $databaseIndexes
      * @param array<Index> $indexesToAdd
@@ -367,7 +369,10 @@ class DiffCalculator
             );
 
             if ($isForeignKeyColumn && !$stillIndexed) {
-                $replacement = new Index(name: "{$entityTable->name}_{$columnName}_index", columns: [$columnName]);
+                $replacement = new Index(
+                    name: IdentifierName::derive("{$entityTable->name}_$columnName", suffix: '_index'),
+                    columns: [$columnName],
+                );
                 $replacements[] = $replacement;
                 $remainingIndexes[] = $replacement;
             }
