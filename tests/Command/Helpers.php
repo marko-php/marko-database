@@ -7,7 +7,6 @@ namespace Marko\Database\Tests\Command;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
 use Marko\Core\Path\ProjectPaths;
-use Marko\Database\Command\ConfirmationPrompterInterface;
 use Marko\Database\Command\DiffCommand;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\StatementInterface;
@@ -291,38 +290,6 @@ final class Helpers
                 $this->migrateCalled = true;
 
                 return ['2024_01_01_000000_create_posts'];
-            }
-        };
-    }
-
-    /**
-     * Create a confirmation prompter that answers without touching STDIN.
-     *
-     * @return ConfirmationPrompterInterface&object{asked: int}
-     */
-    public static function createPrompter(
-        bool $interactive = false,
-        bool $answer = false,
-    ): ConfirmationPrompterInterface {
-        return new class ($interactive, $answer) implements ConfirmationPrompterInterface
-        {
-            public int $asked = 0;
-
-            public function __construct(
-                private readonly bool $interactive,
-                private readonly bool $answer,
-            ) {}
-
-            public function isInteractive(): bool
-            {
-                return $this->interactive;
-            }
-
-            public function confirm(): bool
-            {
-                $this->asked++;
-
-                return $this->answer;
             }
         };
     }

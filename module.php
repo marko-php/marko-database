@@ -6,8 +6,6 @@ use Marko\Core\Container\ContainerInterface;
 use Marko\Core\Discovery\CachedDiscovery;
 use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
-use Marko\Database\Command\ConfirmationPrompterInterface;
-use Marko\Database\Command\StdinConfirmationPrompter;
 use Marko\Database\Config\DatabaseConfig;
 use Marko\Database\Connection\TransactionInterface;
 use Marko\Database\Diff\DiffCalculator;
@@ -42,7 +40,6 @@ return [
     },
     'bindings' => [
         SeederDiscoveryInterface::class => SeederDiscovery::class,
-        ConfirmationPrompterInterface::class => StdinConfirmationPrompter::class,
         DiffCalculator::class => function (ContainerInterface $container): DiffCalculator {
             return new DiffCalculator(
                 ignoredIndexes: $container->get(DatabaseConfig::class)->ignoreIndexes,

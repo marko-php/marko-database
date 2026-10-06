@@ -2,12 +2,11 @@
 
 declare(strict_types=1);
 
+use Marko\Core\Command\ConfirmationPrompterInterface;
 use Marko\Core\Container\Container;
 use Marko\Core\Container\ContainerInterface;
 use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
-use Marko\Database\Command\ConfirmationPrompterInterface;
-use Marko\Database\Command\StdinConfirmationPrompter;
 use Marko\Database\Config\DatabaseConfig;
 use Marko\Database\Diff\DiffCalculator;
 use Marko\Database\Exceptions\SeederException;
@@ -34,18 +33,21 @@ function databaseModuleContainer(
     $container->instance(ProjectPaths::class, new ProjectPaths(sys_get_temp_dir() . '/marko-missing-project'));
     $container->instance(SeederDiscoveryInterface::class, new class () implements SeederDiscoveryInterface
     {
-        public function discoverInVendor(string $vendorPath): array
-        {
+        public function discoverInVendor(
+            string $vendorPath,
+        ): array {
             return [];
         }
 
-        public function discoverInModules(string $modulesPath): array
-        {
+        public function discoverInModules(
+            string $modulesPath,
+        ): array {
             return [];
         }
 
-        public function discoverInApp(string $appPath): array
-        {
+        public function discoverInApp(
+            string $appPath,
+        ): array {
             return [];
         }
     });
@@ -87,9 +89,9 @@ it('builds DiffCalculator from module.php with the configured ignore list', func
     expect($diff->isEmpty())->toBeTrue();
 });
 
-it('binds ConfirmationPrompterInterface to StdinConfirmationPrompter in module.php', function (): void {
-    expect(databaseModuleConfig()['bindings'][ConfirmationPrompterInterface::class])
-        ->toBe(StdinConfirmationPrompter::class);
+it('does not bind a confirmation prompter in the database module', function (): void {
+    // marko/core binds ConfirmationPrompterInterface; a second binding here would shadow it
+    expect(databaseModuleConfig()['bindings'])->not->toHaveKey(ConfirmationPrompterInterface::class);
 });
 
 it('builds a SeederRunner from module.php that runs outside production', function (): void {

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
+use Marko\Core\Command\ConfirmationPrompterInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
-use Marko\Database\Command\ConfirmationPrompterInterface;
 use Marko\Database\Command\MigrateCommand;
 use Marko\Database\Diff\DiffCalculator;
 use Marko\Database\Diff\SchemaDiff;
@@ -27,6 +27,7 @@ use Marko\Database\Schema\Table;
 use Marko\Database\Tests\Command\Helpers;
 use Marko\Database\Tests\Entity\Fixtures\ExtenderFactory\BasicExtenderEntity;
 use Marko\Database\Tests\Entity\Fixtures\ExtenderFactory\ExtenderParentEntity;
+use Marko\Testing\Fake\FakeConfirmationPrompter;
 
 /**
  * Create a stub Migrator for testing.
@@ -316,7 +317,7 @@ function createMigrateCommand(
         sqlGenerator: $sqlGenerator ?? createMigrateSqlGenerator(),
         paths: new ProjectPaths('/test'),
         appEnvironment: new AppEnvironment($appEnv === null ? [] : ['APP_ENV' => $appEnv]),
-        confirmationPrompter: $prompter ?? Helpers::createPrompter(),
+        confirmationPrompter: $prompter ?? new FakeConfirmationPrompter(interactive: false),
     );
 }
 
@@ -702,7 +703,7 @@ it('excludes migrations table from diff calculation', function (): void {
         sqlGenerator: createMigrateSqlGenerator(),
         paths: new ProjectPaths('/test'),
         appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
-        confirmationPrompter: Helpers::createPrompter(),
+        confirmationPrompter: new FakeConfirmationPrompter(interactive: false),
     );
 
     ['output' => $output] = executeMigrateCommand($command);
@@ -749,7 +750,7 @@ it('merges extender columns into parent table schema before computing diff (regr
         sqlGenerator: createMigrateSqlGenerator(),
         paths: new ProjectPaths('/test'),
         appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
-        confirmationPrompter: Helpers::createPrompter(),
+        confirmationPrompter: new FakeConfirmationPrompter(interactive: false),
     );
 
     executeMigrateCommand($command);
@@ -941,7 +942,7 @@ describe('destructive changes', function (): void {
 
     it('refuses to generate destructive changes non-interactively without --force', function (): void {
         $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
-        $prompter = Helpers::createPrompter(interactive: false);
+        $prompter = new FakeConfirmationPrompter(interactive: false);
 
         $command = createMigrateCommand(
             generator: $generator,
@@ -954,13 +955,13 @@ describe('destructive changes', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($output)->toContain('Re-run with --force to generate these changes.')
-            ->and($prompter->asked)->toBe(0)
+            ->and($prompter->asked)->toBeEmpty()
             ->and($generator->generateCalled)->toBeFalse();
     });
 
     it('generates destructive changes non-interactively with --force', function (): void {
         $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
-        $prompter = Helpers::createPrompter(interactive: false);
+        $prompter = new FakeConfirmationPrompter(interactive: false);
 
         $command = createMigrateCommand(
             generator: $generator,
@@ -972,13 +973,13 @@ describe('destructive changes', function (): void {
         ['exitCode' => $exitCode] = executeMigrateCommand($command, ['marko', 'db:migrate', '--force']);
 
         expect($exitCode)->toBe(0)
-            ->and($prompter->asked)->toBe(0)
+            ->and($prompter->asked)->toBeEmpty()
             ->and($generator->generateCalled)->toBeTrue();
     });
 
     it('generates destructive changes when the user confirms', function (): void {
         $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
-        $prompter = Helpers::createPrompter(interactive: true, answer: true);
+        $prompter = new FakeConfirmationPrompter(answers: [true]);
 
         $command = createMigrateCommand(
             generator: $generator,
@@ -987,17 +988,16 @@ describe('destructive changes', function (): void {
             prompter: $prompter,
         );
 
-        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand($command);
+        ['exitCode' => $exitCode] = executeMigrateCommand($command);
 
         expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Generate a migration with these changes? [y/N]')
-            ->and($prompter->asked)->toBe(1)
+            ->and($prompter->asked)->toBe(['Generate a migration with these changes?'])
             ->and($generator->generateCalled)->toBeTrue();
     });
 
     it('does not generate destructive changes when the user declines', function (): void {
         $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/drop.php']);
-        $prompter = Helpers::createPrompter(interactive: true);
+        $prompter = new FakeConfirmationPrompter(answers: [false]);
 
         $command = createMigrateCommand(
             generator: $generator,
@@ -1015,7 +1015,7 @@ describe('destructive changes', function (): void {
 
     it('does not prompt when the diff has no destructive changes', function (): void {
         $generator = createMigrationGeneratorStub(generatedPaths: ['/app/database/migrations/new.php']);
-        $prompter = Helpers::createPrompter(interactive: true);
+        $prompter = new FakeConfirmationPrompter();
 
         $command = createMigrateCommand(
             generator: $generator,
@@ -1025,7 +1025,7 @@ describe('destructive changes', function (): void {
 
         ['output' => $output] = executeMigrateCommand($command);
 
-        expect($prompter->asked)->toBe(0)
+        expect($prompter->asked)->toBeEmpty()
             ->and($output)->not->toContain('remove existing database objects')
             ->and($generator->generateCalled)->toBeTrue();
     });

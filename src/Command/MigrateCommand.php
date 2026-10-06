@@ -6,6 +6,7 @@ namespace Marko\Database\Command;
 
 use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
+use Marko\Core\Command\ConfirmationPrompterInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
 use Marko\Core\Environment\AppEnvironment;
@@ -282,9 +283,7 @@ readonly class MigrateCommand implements CommandInterface
             return 1;
         }
 
-        $output->write('Generate a migration with these changes? [y/N] ');
-
-        if ($this->confirmationPrompter->confirm()) {
+        if ($this->confirmationPrompter->confirm('Generate a migration with these changes?')) {
             return null;
         }
 
