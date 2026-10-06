@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Introspection;
 
-use Marko\Database\Exceptions\MigrationException;
+use Marko\Database\Exceptions\ExpressionDefaultProbeException;
 use Marko\Database\Schema\Expression;
 
 /**
@@ -25,7 +25,7 @@ interface ExpressionDefaultMatcherInterface
      * back what the database stored, and compare it with the column's stored default. The throwaway column
      * never outlives the call and the real schema is never changed.
      *
-     * @throws MigrationException When the database rejects the expression
+     * @throws ExpressionDefaultProbeException When the database rejects the expression, or the connection may not create the temporary table
      */
     public function matchesStoredDefault(
         string $table,

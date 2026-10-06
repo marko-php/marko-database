@@ -10,7 +10,7 @@ use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\TableDiff;
 use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Entity\SchemaBuilder;
-use Marko\Database\Exceptions\MigrationException;
+use Marko\Database\Exceptions\ExpressionDefaultProbeException;
 use Marko\Database\Schema\Column;
 use Marko\Database\Schema\Expression;
 use Marko\Database\Schema\Index;
@@ -427,11 +427,11 @@ it('reports the column as modified when the database stores a different expressi
 });
 
 it(
-    'fails with a MigrationException naming the column when the database rejects the expression',
+    'fails loudly with the probe error naming the column when the database rejects the expression',
     function (): void {
         $introspector = new CountingMatcherIntrospector(
             function (string $table, string $column, Expression $expression): bool {
-                throw MigrationException::rejectedDefaultExpression($table, $column, $expression->sql, 'syntax error');
+                throw ExpressionDefaultProbeException::rejected($table, $column, $expression->sql, 'syntax error');
             },
             ['tokens' => storedTokensTable(new Expression("(now() + '7 days'::interval)"))],
         );
@@ -439,6 +439,9 @@ it(
         $command = Helpers::createDiffCommand(entities: [ExpiringTokenEntity::class], introspector: $introspector);
 
         expect(fn () => Helpers::executeDiffCommand($command))
-            ->toThrow(MigrationException::class, "column 'tokens.expires_at'");
+            ->toThrow(
+                ExpressionDefaultProbeException::class,
+                "The database rejected the default expression \"now() + interval '1 day'\" of column 'tokens.expires_at'",
+            );
     },
 );

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Diff;
 
-use Marko\Database\Exceptions\MigrationException;
+use Marko\Database\Exceptions\ExpressionDefaultProbeException;
 use Marko\Database\Introspection\ExpressionDefaultMatcherInterface;
 use Marko\Database\Introspection\IntrospectorInterface;
 use Marko\Database\Schema\Column;
@@ -37,7 +37,7 @@ readonly class ExpressionDefaultCanonicalizer
      * @param array<string, Table> $entitySchema Tables defined by entities
      * @param array<string, Table> $databaseSchema Tables in the database
      * @return array<string, Table>
-     * @throws MigrationException When the database rejects an entity's default expression
+     * @throws ExpressionDefaultProbeException When the database cannot probe an entity's default expression
      */
     public function canonicalize(
         array $entitySchema,
@@ -60,7 +60,7 @@ readonly class ExpressionDefaultCanonicalizer
     }
 
     /**
-     * @throws MigrationException
+     * @throws ExpressionDefaultProbeException
      */
     private function canonicalizeTable(
         ExpressionDefaultMatcherInterface $matcher,

@@ -56,20 +56,6 @@ class MigrationException extends MarkoException
         );
     }
 
-    public static function rejectedDefaultExpression(
-        string $table,
-        string $column,
-        string $expression,
-        string $reason,
-    ): self {
-        return new self(
-            message: "The database rejects the default expression \"$expression\" of column '$table.$column'",
-            context: "While comparing the entity default of column '$table.$column' with the database: $reason",
-            suggestion: 'Fix the SQL in the column\'s new Expression(...) default so the database accepts it as a '
-                . 'column default.',
-        );
-    }
-
     public static function nothingToModify(
         string $table,
         string $column,

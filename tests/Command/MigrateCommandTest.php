@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\ConfirmationPrompterInterface;
+use Marko\Core\Command\ErrorOutput;
 use Marko\Core\Command\Input;
 use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
@@ -16,6 +17,7 @@ use Marko\Database\Diff\SqlGeneratorInterface;
 use Marko\Database\Diff\TableDiff;
 use Marko\Database\Entity\EntityMetadataFactory;
 use Marko\Database\Entity\SchemaBuilder;
+use Marko\Database\Exceptions\ExpressionDefaultProbeException;
 use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\DataMigrator;
 use Marko\Database\Migration\MigrationGenerator;
@@ -323,6 +325,7 @@ function createMigrateCommand(
         appEnvironment: new AppEnvironment($appEnv === null ? [] : ['APP_ENV' => $appEnv]),
         confirmationPrompter: $prompter ?? new FakeConfirmationPrompter(interactive: false),
         expressionDefaultCanonicalizer: new ExpressionDefaultCanonicalizer(Helpers::createStubIntrospector()),
+        errorOutput: new ErrorOutput(fopen('php://memory', 'r+')),
     );
 }
 
@@ -710,6 +713,7 @@ it('excludes migrations table from diff calculation', function (): void {
         appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
         confirmationPrompter: new FakeConfirmationPrompter(interactive: false),
         expressionDefaultCanonicalizer: new ExpressionDefaultCanonicalizer($introspector),
+        errorOutput: new ErrorOutput(fopen('php://memory', 'r+')),
     );
 
     ['output' => $output] = executeMigrateCommand($command);
@@ -758,6 +762,7 @@ it('merges extender columns into parent table schema before computing diff (regr
         appEnvironment: new AppEnvironment(['APP_ENV' => 'local']),
         confirmationPrompter: new FakeConfirmationPrompter(interactive: false),
         expressionDefaultCanonicalizer: new ExpressionDefaultCanonicalizer(Helpers::createStubIntrospector()),
+        errorOutput: new ErrorOutput(fopen('php://memory', 'r+')),
     );
 
     executeMigrateCommand($command);
@@ -775,10 +780,11 @@ it('merges extender columns into parent table schema before computing diff (regr
  * An introspector whose tokens table stores the ExpiringTokenEntity expression default in PostgreSQL's spelling,
  * and says the database would store the entity's expression the same way.
  */
-function createRespelledDefaultIntrospector(): CountingMatcherIntrospector
-{
+function createRespelledDefaultIntrospector(
+    ?Closure $matches = null,
+): CountingMatcherIntrospector {
     return new CountingMatcherIntrospector(
-        fn (): bool => true,
+        $matches ?? fn (): bool => true,
         [
             'tokens' => new Table(name: 'tokens', columns: [
                 new Column(name: 'id', type: 'integer', primaryKey: true, autoIncrement: true),
@@ -799,9 +805,11 @@ function createExpressionDefaultMigrateCommand(
     CountingMatcherIntrospector $introspector,
     MigrationGenerator $generator,
     string $appEnv,
+    ?Migrator $migrator = null,
+    ?ErrorOutput $errorOutput = null,
 ): MigrateCommand {
     return new MigrateCommand(
-        migrator: createMigratorStub(),
+        migrator: $migrator ?? createMigratorStub(),
         dataMigrator: createDataMigratorStub(),
         migrationGenerator: $generator,
         entityDiscovery: Helpers::createStubEntityDiscovery([ExpiringTokenEntity::class]),
@@ -813,6 +821,7 @@ function createExpressionDefaultMigrateCommand(
         appEnvironment: new AppEnvironment(['APP_ENV' => $appEnv]),
         confirmationPrompter: new FakeConfirmationPrompter(interactive: false),
         expressionDefaultCanonicalizer: new ExpressionDefaultCanonicalizer($introspector),
+        errorOutput: $errorOutput ?? new ErrorOutput(fopen('php://memory', 'r+')),
     );
 }
 
@@ -843,6 +852,72 @@ it('reports no drift when the database stores the entity expression default in i
 
     expect($output)->not->toContain('Warning: Entity schema differs from database.')
         ->and($introspector->probes)->toHaveCount(1);
+});
+
+/**
+ * An introspector whose probe fails the way a deploy user without the temporary table privilege makes it fail.
+ */
+function createFailingProbeIntrospector(): CountingMatcherIntrospector
+{
+    return createRespelledDefaultIntrospector(
+        function (string $table, string $column, Expression $expression): bool {
+            throw ExpressionDefaultProbeException::rejected(
+                $table,
+                $column,
+                $expression->sql,
+                'permission denied to create temporary tables in database "app"',
+            );
+        },
+    );
+}
+
+describe('a failing expression default probe', function (): void {
+    it(
+        'warns on stderr and exits with the migration status when the post-migration drift check fails',
+        function (): void {
+            $stderr = fopen('php://memory', 'r+');
+            $migrator = createMigratorStub(pendingMigrations: ['2026_10_06_000000_create_tokens']);
+
+            ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand(
+                createExpressionDefaultMigrateCommand(
+                    createFailingProbeIntrospector(),
+                    createMigrationGeneratorStub(),
+                    'production',
+                    $migrator,
+                    new ErrorOutput($stderr),
+                ),
+            );
+            $warning = Helpers::getOutputContent($stderr);
+
+            expect($exitCode)->toBe(0)
+                ->and($migrator->migrateCallCount)->toBe(1)
+                ->and($output)->toContain('Migration complete.')
+                ->and($output)->not->toContain('Error:')
+                ->and($warning)->toContain('Warning: The drift check could not compare')
+                ->and($warning)->toContain("column 'tokens.expires_at'")
+                ->and($warning)->toContain('permission denied to create temporary tables')
+                ->and($warning)->toContain('CREATE TEMPORARY TABLES')
+                ->and($warning)->toContain('The migrations were applied');
+        },
+    );
+
+    it('still fails db:migrate in development, where it generates migrations', function (): void {
+        $stderr = fopen('php://memory', 'r+');
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeMigrateCommand(
+            createExpressionDefaultMigrateCommand(
+                createFailingProbeIntrospector(),
+                createMigrationGeneratorStub(),
+                'local',
+                errorOutput: new ErrorOutput($stderr),
+            ),
+        );
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain(
+                "Error: The database rejected the default expression \"now() + interval '1 day'\"",
+            );
+    });
 });
 
 function createTableDiffForMigrate(): SchemaDiff

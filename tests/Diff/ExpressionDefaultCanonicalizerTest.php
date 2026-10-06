@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Marko\Database\Diff\DiffCalculator;
 use Marko\Database\Diff\ExpressionDefaultCanonicalizer;
+use Marko\Database\Exceptions\ExpressionDefaultProbeException;
 use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Introspection\IntrospectorInterface;
 use Marko\Database\Schema\Column;
@@ -188,7 +189,7 @@ describe('ExpressionDefaultCanonicalizer', function (): void {
     it("lets the matcher's MigrationException for a rejected expression propagate", function (): void {
         $introspector = new CountingMatcherIntrospector(
             function (string $table, string $column, Expression $expression): bool {
-                throw MigrationException::rejectedDefaultExpression($table, $column, $expression->sql, 'syntax error');
+                throw ExpressionDefaultProbeException::rejected($table, $column, $expression->sql, 'syntax error');
             },
         );
         $entity = canonicalizerSchema(expiresAt(new Expression("now() + intervall '1 day'")));
