@@ -151,4 +151,32 @@ describe('MigrationRepository', function (): void {
 
         expect($lastBatch)->toBe([]);
     });
+
+    it('quotes the migrations table in every statement through the connection', function (): void {
+        $statements = [];
+        $connection = $this->createMock(ConnectionInterface::class);
+        $connection->method('quoteIdentifier')->willReturnCallback(fn (string $name): string => "`$name`");
+        $connection->method('execute')->willReturnCallback(function (string $sql) use (&$statements): int {
+            $statements[] = $sql;
+
+            return 1;
+        });
+        $connection->method('query')->willReturnCallback(function (string $sql) use (&$statements): array {
+            $statements[] = $sql;
+
+            return [['max_batch' => 1, 'name' => 'm1', 'batch' => 1]];
+        });
+        $repository = new MigrationRepository();
+
+        $repository->createTable($connection);
+        $repository->record($connection, 'm1', 1);
+        $repository->delete($connection, 'm1');
+        $repository->getApplied($connection);
+        $repository->getAppliedWithBatch($connection);
+        $repository->getNextBatchNumber($connection);
+        $repository->getLastBatchMigrations($connection);
+
+        expect($statements)->toHaveCount(8)
+            ->and(array_filter($statements, fn (string $sql): bool => !str_contains($sql, '`migrations`')))->toBe([]);
+    })->issue(338);
 });

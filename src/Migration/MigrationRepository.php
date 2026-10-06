@@ -11,6 +11,8 @@ use Marko\Database\Connection\ConnectionInterface;
  */
 class MigrationRepository
 {
+    private const string TABLE = 'migrations';
+
     /**
      * Create the migrations table if it doesn't exist.
      */
@@ -18,7 +20,7 @@ class MigrationRepository
         ConnectionInterface $connection,
     ): void {
         $sql = <<<SQL
-            CREATE TABLE IF NOT EXISTS migrations (
+            CREATE TABLE IF NOT EXISTS {$this->table($connection)} (
                 name VARCHAR(255) NOT NULL PRIMARY KEY,
                 batch INT NOT NULL
             )
@@ -36,7 +38,7 @@ class MigrationRepository
         int $batch,
     ): void {
         $connection->execute(
-            'INSERT INTO migrations (name, batch) VALUES (?, ?)',
+            "INSERT INTO {$this->table($connection)} (name, batch) VALUES (?, ?)",
             [$name, $batch],
         );
     }
@@ -49,7 +51,7 @@ class MigrationRepository
         string $name,
     ): void {
         $connection->execute(
-            'DELETE FROM migrations WHERE name = ?',
+            "DELETE FROM {$this->table($connection)} WHERE name = ?",
             [$name],
         );
     }
@@ -62,7 +64,7 @@ class MigrationRepository
     public function getApplied(
         ConnectionInterface $connection,
     ): array {
-        $rows = $connection->query('SELECT name FROM migrations ORDER BY name');
+        $rows = $connection->query("SELECT name FROM {$this->table($connection)} ORDER BY name");
 
         return array_column($rows, 'name');
     }
@@ -75,7 +77,7 @@ class MigrationRepository
     public function getAppliedWithBatch(
         ConnectionInterface $connection,
     ): array {
-        return $connection->query('SELECT name, batch FROM migrations ORDER BY name');
+        return $connection->query("SELECT name, batch FROM {$this->table($connection)} ORDER BY name");
     }
 
     /**
@@ -84,7 +86,7 @@ class MigrationRepository
     public function getNextBatchNumber(
         ConnectionInterface $connection,
     ): int {
-        $result = $connection->query('SELECT MAX(batch) as max_batch FROM migrations');
+        $result = $connection->query("SELECT MAX(batch) as max_batch FROM {$this->table($connection)}");
 
         $maxBatch = $result[0]['max_batch'] ?? null;
 
@@ -99,7 +101,7 @@ class MigrationRepository
     public function getLastBatchMigrations(
         ConnectionInterface $connection,
     ): array {
-        $result = $connection->query('SELECT MAX(batch) as max_batch FROM migrations');
+        $result = $connection->query("SELECT MAX(batch) as max_batch FROM {$this->table($connection)}");
 
         $maxBatch = $result[0]['max_batch'] ?? null;
 
@@ -108,10 +110,19 @@ class MigrationRepository
         }
 
         $rows = $connection->query(
-            'SELECT name FROM migrations WHERE batch = ? ORDER BY name DESC',
+            "SELECT name FROM {$this->table($connection)} WHERE batch = ? ORDER BY name DESC",
             [$maxBatch],
         );
 
         return array_column($rows, 'name');
+    }
+
+    /**
+     * The migrations table name quoted for the connection's SQL dialect.
+     */
+    private function table(
+        ConnectionInterface $connection,
+    ): string {
+        return $connection->quoteIdentifier(self::TABLE);
     }
 }
