@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Tests\Feature;
 
+use Closure;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\StatementInterface;
 use Marko\Database\Connection\TransactionInterface;
@@ -106,6 +107,7 @@ function createTrackingConnectionStub(
         public function transaction(
             callable $callback,
             int $attempts = 1,
+            int|Closure|null $backoff = null,
         ): mixed {
             $this->beginTransaction();
 

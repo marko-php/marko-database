@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Tests\Repository;
 
+use Closure;
 use Marko\Core\Event\Event;
 use Marko\Core\Event\EventDispatcherInterface;
 use Marko\Database\Attributes\Column;
@@ -250,6 +251,7 @@ function makeBatchTransactionConnection(
         public function transaction(
             callable $callback,
             int $attempts = 1,
+            int|Closure|null $backoff = null,
         ): mixed {
             $this->log[] = ['type' => 'transaction'];
             $this->beginTransaction();
@@ -738,6 +740,7 @@ function makePgsqlTransactionConnection(
         public function transaction(
             callable $callback,
             int $attempts = 1,
+            int|Closure|null $backoff = null,
         ): mixed {
             $this->beginTransaction();
             try {

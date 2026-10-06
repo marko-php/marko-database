@@ -8,9 +8,10 @@ use PDOException;
 
 /**
  * The database could not serialize this transaction against a concurrent one
- * under REPEATABLE READ or SERIALIZABLE isolation, and rolled it back
- * (PostgreSQL SQLSTATE 40001). MySQL InnoDB reports these conflicts as
- * deadlocks (DeadlockException).
+ * under REPEATABLE READ or SERIALIZABLE isolation (PostgreSQL SQLSTATE
+ * 40001, or MariaDB error 1020 "Record has changed since last read" under
+ * innodb_snapshot_isolation=ON). MySQL InnoDB reports most of these
+ * conflicts as deadlocks (DeadlockException).
  *
  * Retryable: see TransactionConflictException.
  */

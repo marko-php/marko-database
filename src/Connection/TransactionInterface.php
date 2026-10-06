@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Connection;
 
+use Closure;
 use Marko\Database\Exceptions\TransactionConflictException;
 use Marko\Database\Exceptions\TransactionException;
 
@@ -61,16 +62,27 @@ interface TransactionInterface
      * after-commit callback is never retried, because the data has already
      * been committed.
      *
+     * Between attempts the connection waits as $backoff says (see
+     * TransactionBackoff): null (the default) waits a random delay between 0
+     * and min(500, 10 * 2 ** ($attempt - 1)) milliseconds (exponential backoff
+     * with full jitter), an int waits that many milliseconds (0 retries at
+     * once), and a Closure(int $attempt, TransactionConflictException
+     * $conflict): int returns the milliseconds to wait. $attempt is the number
+     * of the attempt that just failed, starting at 1. The connection never
+     * waits after the last attempt, with $attempts at 1, or in a nested call.
+     *
      * @param callable $callback The callback to execute within the transaction
      * @param int $attempts How many times the outermost transaction may run (at least 1)
+     * @param int|(Closure(int, TransactionConflictException): int)|null $backoff The delay between attempts
      * @return mixed The return value of the callback
      *
-     * @throws TransactionException|TransactionConflictException When $attempts is below 1, or when the last
-     *     attempt still conflicts
+     * @throws TransactionException|TransactionConflictException When $attempts is below 1, $backoff is
+     *     negative, or the last attempt still conflicts
      */
     public function transaction(
         callable $callback,
         int $attempts = 1,
+        int|Closure|null $backoff = null,
     ): mixed;
 
     /**

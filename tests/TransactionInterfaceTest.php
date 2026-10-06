@@ -24,7 +24,7 @@ describe('TransactionInterface', function (): void {
 
         expect($reflection->hasMethod('transaction'))->toBeTrue()
             ->and($transaction->getReturnType()?->getName())->toBe('mixed')
-            ->and($params)->toHaveCount(2)
+            ->and($params)->toHaveCount(3)
             ->and($params[0]->getName())->toBe('callback')
             ->and($params[0]->getType()?->getName())->toBe('callable');
     });
@@ -36,6 +36,20 @@ describe('TransactionInterface', function (): void {
             ->and($attempts->getType()?->getName())->toBe('int')
             ->and($attempts->isOptional())->toBeTrue()
             ->and($attempts->getDefaultValue())->toBe(1);
+    });
+
+    it('declares a nullable int or Closure backoff parameter defaulting to null', function (): void {
+        $backoff = new ReflectionMethod(TransactionInterface::class, 'transaction')->getParameters()[2];
+        $types = array_map(
+            fn (ReflectionNamedType $type): string => $type->getName(),
+            $backoff->getType()->getTypes(),
+        );
+        sort($types);
+
+        expect($backoff->getName())->toBe('backoff')
+            ->and($types)->toBe(['Closure', 'int', 'null'])
+            ->and($backoff->isOptional())->toBeTrue()
+            ->and($backoff->getDefaultValue())->toBeNull();
     });
 
     it('defines transactionLevel returning int', function (): void {

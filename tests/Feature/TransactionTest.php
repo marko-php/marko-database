@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Tests\Feature;
 
+use Closure;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\StatementInterface;
 use Marko\Database\Connection\TransactionInterface;
@@ -111,6 +112,7 @@ describe('Transaction Handling', function (): void {
             public function transaction(
                 callable $callback,
                 int $attempts = 1,
+                int|Closure|null $backoff = null,
             ): mixed {
                 $this->beginTransaction();
 
@@ -245,6 +247,7 @@ describe('Transaction Handling', function (): void {
             public function transaction(
                 callable $callback,
                 int $attempts = 1,
+                int|Closure|null $backoff = null,
             ): mixed {
                 $this->beginTransaction();
 
@@ -382,6 +385,7 @@ describe('Transaction Handling', function (): void {
             public function transaction(
                 callable $callback,
                 int $attempts = 1,
+                int|Closure|null $backoff = null,
             ): null {
                 return null;
             }
