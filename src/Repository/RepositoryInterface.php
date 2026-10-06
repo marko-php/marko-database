@@ -99,14 +99,29 @@ interface RepositoryInterface
      *   rows are rolled back on failure. If an outer transaction is already
      *   active the method participates in it — the caller is responsible for
      *   committing or rolling back.
-     * - MySQL id recovery uses `LAST_INSERT_ID()` + sequential row-count math
-     *   and is only reliable when `innodb_autoinc_lock_mode` is 0 or 1
-     *   (traditional/consecutive). PostgreSQL uses `INSERT … RETURNING` for
-     *   exact id recovery.
+     * - Where the connection supports `RETURNING` (PostgreSQL, MariaDB 10.5+),
+     *   keys are matched to entities by the row order `RETURNING` gives back.
+     *   Neither server documents that a multi-row `INSERT ... RETURNING`
+     *   returns rows in `VALUES` order, but both do, and integration tests
+     *   cover it on every server version CI runs, including a sequence or
+     *   `auto_increment` step of 5. The row count is checked
+     *   (`BatchInsertException`).
+     * - On MySQL (no `RETURNING`), `@@auto_increment_increment` is read once per
+     *   batch, before the INSERT, through the connection (the write connection
+     *   behind `marko/database-readwrite`), and each entity gets
+     *   `LAST_INSERT_ID()` + offset * increment. A value that is not a positive
+     *   integer throws `BatchInsertException`. Explicit keys set on every entity
+     *   are kept. A single multi-row `INSERT ... VALUES` is a "simple insert":
+     *   under `innodb_autoinc_lock_mode` 0 and 1 it always gets one consecutive
+     *   block; under 2 (the MySQL 8.0+ default) it does too unless a bulk insert
+     *   (`INSERT ... SELECT`, `REPLACE ... SELECT`, `LOAD DATA`) runs
+     *   concurrently on the same table, where ids can interleave and the
+     *   arithmetic would be wrong.
+     * - For a per-row guarantee, call `save()` on each entity inside
+     *   `transaction()` (N round trips instead of one).
      *
      * @param array<Entity> $entities Entities to insert — must all be the same class
      * @throws BatchInsertException|RepositoryException
-     *                              or column sets differ across the batch
      */
     public function insertBatch(array $entities): void;
 }

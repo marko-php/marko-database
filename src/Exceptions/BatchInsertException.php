@@ -78,6 +78,18 @@ class BatchInsertException extends MarkoException
         );
     }
 
+    public static function unreadableAutoIncrementStep(
+        mixed $value,
+    ): self {
+        $shown = $value === null ? 'no value' : var_export($value, true);
+
+        return new self(
+            message: "Could not read a positive integer from the MySQL auto_increment_increment setting (got $shown)",
+            context: 'Calling insertBatch() on MySQL, which assigns ids by stepping auto_increment_increment from the first inserted id',
+            suggestion: 'Check that the connection can run SELECT @@auto_increment_increment and that the server setting is a positive integer',
+        );
+    }
+
     public static function returningRowCountMismatch(
         int $expectedCount,
         int $actualCount,

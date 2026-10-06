@@ -307,6 +307,14 @@ abstract class Repository implements RepositoryInterface
      * The insert runs through transaction() when the connection supports
      * transactions, so it nests as a savepoint inside a caller's transaction.
      *
+     * Generated keys: with RETURNING, keys are matched to entities by the row
+     * order the server returns (observed on PostgreSQL and MariaDB 10.5+, not
+     * documented by either, covered by integration tests); the row count is
+     * checked. Without RETURNING (MySQL), keys are LAST_INSERT_ID() + offset *
+     * @@auto_increment_increment, which assumes the batch got one consecutive
+     * block (not guaranteed under innodb_autoinc_lock_mode 2 while a bulk insert
+     * runs on the same table). See RepositoryInterface::insertBatch().
+     *
      * @param array<Entity> $entities
      * @throws BatchInsertException|RepositoryException|Throwable
      */
@@ -350,7 +358,7 @@ abstract class Repository implements RepositoryInterface
             }
         }
 
-        $write = function () use ($entities, $sql, $bindings, $readsGeneratedKeys): void {
+        $write = function () use ($entities, $sql, $bindings, $columns, $readsGeneratedKeys): void {
             $pkProperty = $this->metadata->getPrimaryKeyProperty();
             $isAutoIncrement = $pkProperty?->isAutoIncrement === true;
 
@@ -376,17 +384,26 @@ abstract class Repository implements RepositoryInterface
                     $this->assignPrimaryKey($entity, $pkProperty, $returningRows[$offset][$pkColumn]);
                 }
             } else {
+                $assignsKeys = $isAutoIncrement
+                    && !in_array($pkProperty->columnName, $columns, true);
+                $step = $assignsKeys ? $this->readAutoIncrementStep() : 1;
+
                 $this->connection->execute($sql, $bindings);
 
                 // MySQL strategy: LAST_INSERT_ID() returns the FIRST inserted id for a
-                // single multi-row INSERT when innodb_autoinc_lock_mode is 0 or 1.
-                if ($isAutoIncrement) {
+                // single multi-row INSERT, and each following row advances by
+                // auto_increment_increment. InnoDB allocates one consecutive block for a
+                // multi-row VALUES insert under every innodb_autoinc_lock_mode, unless
+                // (mode 2 only) a bulk insert on the same table interleaves. The step is
+                // read before the INSERT because a later statement would reset
+                // lastInsertId(). Explicit keys are never overwritten.
+                if ($assignsKeys) {
                     $firstId = $this->connection->lastInsertId();
                     $reflection = new ReflectionClass($entities[0]);
 
                     foreach ($entities as $offset => $entity) {
                         $property = $reflection->getProperty($this->metadata->primaryKey);
-                        $property->setValue($entity, $firstId + $offset);
+                        $property->setValue($entity, $firstId + $offset * $step);
                     }
                 }
             }
@@ -621,6 +638,31 @@ abstract class Repository implements RepositoryInterface
         $pkProperty = $this->metadata->getPrimaryKeyProperty();
 
         return $pkProperty?->isGenerated === true && !array_key_exists($pkProperty->columnName, $row);
+    }
+
+    /**
+     * Read how far MySQL advances the auto-increment key between rows of one INSERT.
+     *
+     * Other drivers advance by one, so they are not asked.
+     *
+     * @throws BatchInsertException
+     */
+    private function readAutoIncrementStep(): int
+    {
+        if ($this->connection->driverName() !== 'mysql') {
+            return 1;
+        }
+
+        $rows = $this->connection->query('SELECT @@auto_increment_increment AS auto_increment_increment');
+        $value = $rows[0]['auto_increment_increment'] ?? null;
+
+        $isInteger = is_int($value) || (is_string($value) && ctype_digit($value));
+
+        if (!$isInteger || (int) $value < 1) {
+            throw BatchInsertException::unreadableAutoIncrementStep($value);
+        }
+
+        return (int) $value;
     }
 
     /**
