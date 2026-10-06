@@ -162,3 +162,17 @@ describe('IdentifierValidator', function (): void {
             ->toThrow(InvalidColumnException::class);
     });
 });
+
+describe('IdentifierValidator::assertNoDangerousPatterns', function (): void {
+    it('rejects a # comment marker when the dialect treats # as a comment', function (): void {
+        expect(fn () => IdentifierValidator::assertNoDangerousPatterns(
+            "name = '' OR 1=1 #'",
+            hashStartsComment: true,
+        ))->toThrow(InvalidColumnException::class);
+    });
+
+    it('allows # when the dialect does not treat it as a comment', function (): void {
+        expect(fn () => IdentifierValidator::assertNoDangerousPatterns("meta #>> '{a,b}' = ?"))
+            ->not->toThrow(InvalidColumnException::class);
+    });
+});
