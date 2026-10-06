@@ -66,7 +66,10 @@ describe('EntityCacheContributor', function (): void {
         $container = new Container();
         $container->instance(ContainerInterface::class, $container);
         // An empty, missing project: a scan would find no entities at all.
-        $container->instance(ProjectPaths::class, new ProjectPaths(sys_get_temp_dir() . '/marko-entity-cache-missing'));
+        $container->instance(
+            ProjectPaths::class,
+            new ProjectPaths(sys_get_temp_dir() . '/marko-entity-cache-missing'),
+        );
         $container->instance(CachedDiscovery::class, new CachedDiscovery([
             'entities' => [ExtenderParentEntity::class, BasicExtenderEntity::class],
         ]));

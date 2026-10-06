@@ -33,8 +33,9 @@ readonly class EntityCacheContributor implements DiscoveryCacheContributorInterf
      * @param array<ModuleManifest> $modules
      * @return array<int, class-string<Entity>>
      */
-    public function compile(array $modules): array
-    {
+    public function compile(
+        array $modules,
+    ): array {
         return array_values($this->entityDiscovery->discoverAll(
             $this->projectPaths->vendor,
             $this->projectPaths->modules,
