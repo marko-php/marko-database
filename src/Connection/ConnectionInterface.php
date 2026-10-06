@@ -65,8 +65,10 @@ interface ConnectionInterface
      * Whether this connection can read values back from an INSERT with
      * `INSERT ... RETURNING <columns>` through query().
      *
-     * The repository uses it to read database-generated primary keys back.
-     * Like driverName(), it must not require a live database connection.
+     * The repository uses it to read database-generated primary keys back,
+     * just before it runs the INSERT. The answer may depend on the server
+     * (MariaDB 10.5+ has RETURNING, MySQL has none), so a driver may connect
+     * and ask the server once to answer it. Call it only when about to run SQL.
      */
     public function supportsReturning(): bool;
 
