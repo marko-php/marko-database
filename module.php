@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Marko\Core\Container\ContainerInterface;
+use Marko\Core\Discovery\CachedDiscovery;
 use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Command\ConfirmationPrompterInterface;
@@ -10,6 +11,7 @@ use Marko\Database\Command\StdinConfirmationPrompter;
 use Marko\Database\Config\DatabaseConfig;
 use Marko\Database\Connection\TransactionInterface;
 use Marko\Database\Diff\DiffCalculator;
+use Marko\Database\Entity\EntityCacheContributor;
 use Marko\Database\Entity\EntityDiscovery;
 use Marko\Database\Entity\EntityHydrator;
 use Marko\Database\Entity\EntityMetadataFactory;
@@ -24,16 +26,18 @@ return [
         // entity is still there when another repository or service saves it.
         EntityHydrator::class,
     ],
+    'discovery' => [
+        EntityCacheContributor::class,
+    ],
     'boot' => function (
+        CachedDiscovery $cachedDiscovery,
         EntityDiscovery $discovery,
         EntityMetadataFactory $metadataFactory,
         ProjectPaths $paths,
     ): void {
-        $entityClasses = array_merge(
-            $discovery->discoverInVendor($paths->vendor),
-            $discovery->discoverInModules($paths->modules),
-            $discovery->discoverInApp($paths->app),
-        );
+        // The discovery cache holds the entity list on a cached boot; otherwise scan.
+        $entityClasses = $cachedDiscovery->section(EntityCacheContributor::KEY)
+            ?? $discovery->discoverAll($paths->vendor, $paths->modules, $paths->app);
         $metadataFactory->linkExtendersFrom($entityClasses);
     },
     'bindings' => [
