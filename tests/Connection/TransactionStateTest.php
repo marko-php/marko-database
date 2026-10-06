@@ -179,4 +179,106 @@ describe('TransactionState', function (): void {
         expect($state->level())->toBe(1)
             ->and($ran)->toBeFalse();
     });
+
+    it(
+        'runs the after-commit callbacks of every open level in registration order without closing a level',
+        function (): void {
+            $state = new TransactionState();
+            $log = [];
+    
+            $state->begin();
+            $state->afterCommit(function () use (&$log): void {
+                $log[] = 'outer';
+            });
+            $state->begin();
+            $state->afterCommit(function () use (&$log): void {
+                $log[] = 'inner';
+            });
+            $state->runAfterCommitCallbacks();
+    
+            expect($log)->toBe(['outer', 'inner'])
+                ->and($state->level())->toBe(2);
+        }
+    );
+
+    it('removes the callbacks it ran so a later commit does not run them again', function (): void {
+        $state = new TransactionState();
+        $runs = 0;
+
+        $state->begin();
+        $state->afterCommit(function () use (&$runs): void {
+            $runs++;
+        });
+        $state->runAfterCommitCallbacks();
+        $state->runAfterCommitCallbacks();
+        $state->commit();
+
+        expect($runs)->toBe(1);
+    });
+
+    it('does not run a callback twice when an earlier callback throws', function (): void {
+        $state = new TransactionState();
+        $log = [];
+
+        $state->begin();
+        $state->afterCommit(function () use (&$log): void {
+            $log[] = 'first';
+
+            throw new RuntimeException('callback failed');
+        });
+        $state->afterCommit(function () use (&$log): void {
+            $log[] = 'second';
+        });
+
+        try {
+            $state->runAfterCommitCallbacks();
+        } catch (RuntimeException) {
+            // Expected: the exception propagates.
+        }
+
+        $state->runAfterCommitCallbacks();
+
+        expect($log)->toBe(['first', 'second']);
+    });
+
+    it('queues callbacks registered while running instead of running them in the same call', function (): void {
+        $state = new TransactionState();
+        $log = [];
+
+        $state->begin();
+        $state->afterCommit(function () use ($state, &$log): void {
+            $log[] = 'first';
+            $state->afterCommit(function () use (&$log): void {
+                $log[] = 'registered while running';
+            });
+        });
+        $state->runAfterCommitCallbacks();
+        $afterFirstRun = $log;
+        $state->runAfterCommitCallbacks();
+
+        expect($afterFirstRun)->toBe(['first'])
+            ->and($log)->toBe(['first', 'registered while running']);
+    });
+
+    it('does nothing when no transaction is open', function (): void {
+        $state = new TransactionState();
+
+        $state->runAfterCommitCallbacks();
+
+        expect($state->level())->toBe(0);
+    });
+
+    it('keeps after-rollback callbacks registered', function (): void {
+        $state = new TransactionState();
+        $ran = false;
+
+        $state->begin();
+        $state->afterRollback(function () use (&$ran): void {
+            $ran = true;
+        });
+        $state->runAfterCommitCallbacks();
+        $state->rollback();
+
+        expect($ran)->toBeTrue();
+    });
 });

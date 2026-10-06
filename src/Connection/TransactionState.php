@@ -110,6 +110,33 @@ class TransactionState
     }
 
     /**
+     * Run the after-commit callbacks queued at every open level, outermost
+     * level first, as though the outermost transaction had committed, and
+     * forget them. No level is closed and nothing is committed; after-rollback
+     * callbacks stay registered.
+     *
+     * Used by tests that wrap each case in a transaction that is always rolled
+     * back, so the callbacks the code under test queued can still be asserted on.
+     */
+    public function runAfterCommitCallbacks(): void
+    {
+        // Only the callbacks queued when the call starts run; one registered by
+        // a running callback stays queued. Each callback is removed before it
+        // runs, so an exception leaves the rest queued and never re-runs one.
+        $pending = array_map(static fn (array $level): int => count($level['commit']), $this->levels);
+
+        foreach ($pending as $index => $count) {
+            for ($i = 0; $i < $count; $i++) {
+                $callback = array_shift($this->levels[$index]['commit']);
+
+                if ($callback !== null) {
+                    $callback();
+                }
+            }
+        }
+    }
+
+    /**
      * Drop the current level without running any of its callbacks. Used when
      * the statement that would close the level failed.
      */

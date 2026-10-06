@@ -10,8 +10,14 @@ use Marko\Database\Connection\TransactionInterface;
 /**
  * Helper class for database testing utilities.
  *
- * Provides transaction-based test isolation and common database operations.
- * Instantiate this class explicitly in your tests for clear, visible dependencies.
+ * Provides transaction-based test isolation and common database operations
+ * on a connection you construct yourself.
+ *
+ * For application tests, prefer Marko\Testing\Database\RefreshDatabase from
+ * marko/testing: it boots and migrates the application once per process and
+ * wraps each test in a transaction on the shared connection, so writes made
+ * through repositories and HTTP requests are rolled back too. Its
+ * TestDatabase delegates seedTable() and getTableRowCount() to this class.
  *
  * Usage in a Pest test file:
  *
