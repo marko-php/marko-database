@@ -16,6 +16,9 @@ use Marko\Encryption\Exceptions\EncryptionException;
  * or an enum backing value) and encrypts its string form. On read it decrypts before the
  * normal conversion runs. Requires marko/encryption and a bound EncryptorInterface
  * (for example marko/encryption-openssl).
+ *
+ * The ciphertext is bound to its "table.column" as associated data, so a value copied
+ * into another encrypted column (or another table) fails to decrypt.
  */
 readonly class EncryptedCast implements CastInterface
 {
@@ -24,13 +27,13 @@ readonly class EncryptedCast implements CastInterface
     ) {}
 
     /**
-     * @throws DecryptionException
+     * @throws DecryptionException|EncryptionException
      */
     public function toPhp(
         mixed $value,
         PropertyMetadata $meta,
     ): string {
-        return $this->encryptor->decrypt((string) $value);
+        return $this->encryptor->decrypt((string) $value, $this->associatedData($meta));
     }
 
     /**
@@ -40,6 +43,28 @@ readonly class EncryptedCast implements CastInterface
         mixed $value,
         PropertyMetadata $meta,
     ): string {
-        return $this->encryptor->encrypt(is_bool($value) ? ($value ? '1' : '0') : (string) $value);
+        return $this->encryptor->encrypt(
+            is_bool($value) ? ($value ? '1' : '0') : (string) $value,
+            $this->associatedData($meta),
+        );
+    }
+
+    /**
+     * The associated data binding a ciphertext to its column: "table.column".
+     *
+     * @throws EncryptionException
+     */
+    public function associatedData(
+        PropertyMetadata $meta,
+    ): string {
+        if ($meta->tableName === '') {
+            throw new EncryptionException(
+                message: "Cannot encrypt property '$meta->name' without a table name",
+                context: 'Encrypted columns are bound to "table.column" as associated data',
+                suggestion: 'Build PropertyMetadata through EntityMetadataFactory, or pass tableName when constructing it',
+            );
+        }
+
+        return "$meta->tableName.$meta->columnName";
     }
 }

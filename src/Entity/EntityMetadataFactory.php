@@ -208,6 +208,7 @@ class EntityMetadataFactory
                 castClass: $castClass,
                 encrypted: $encrypted,
                 isGenerated: $columnAttr->generated,
+                tableName: $tableName,
             );
         }
 

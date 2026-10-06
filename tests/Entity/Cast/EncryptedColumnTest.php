@@ -14,33 +14,61 @@ use Marko\Database\Attributes\Index;
 use Marko\Database\Attributes\Table;
 use Marko\Database\Entity\Cast\CastResolver;
 use Marko\Database\Entity\Cast\DateTimeCast;
+use Marko\Database\Entity\Cast\EncryptedCast;
 use Marko\Database\Entity\Cast\JsonCast;
 use Marko\Database\Entity\Entity;
 use Marko\Database\Entity\EntityHydrator;
 use Marko\Database\Entity\EntityMetadataFactory;
+use Marko\Database\Entity\PropertyMetadata;
 use Marko\Database\Entity\SchemaBuilder;
 use Marko\Database\Exceptions\EntityException;
 use Marko\Database\Repository\Repository;
 use Marko\Database\Tests\Entity\Cast\Fixtures\RecordingSqliteConnection;
 use Marko\Encryption\Contracts\EncryptorInterface;
 use Marko\Encryption\Exceptions\DecryptionException;
+use Marko\Encryption\Exceptions\EncryptionException;
 
+/**
+ * Non-deterministic fake that, like a real AEAD cipher, only decrypts with the
+ * associated data the value was encrypted with. Records the AAD of every call.
+ */
 class FakeRandomEncryptor implements EncryptorInterface
 {
+    /**
+     * @var list<string>
+     */
+    public static array $aads = [];
+
     public function encrypt(
         string $value,
+        string $aad = '',
     ): string {
-        return 'enc:' . base64_encode(bin2hex(random_bytes(8)) . '|' . $value);
+        self::$aads[] = $aad;
+
+        return 'enc:' . base64_encode(bin2hex(random_bytes(8)) . '|' . bin2hex($aad) . '|' . $value);
     }
 
     public function decrypt(
         string $encrypted,
+        string $aad = '',
     ): string {
+        self::$aads[] = $aad;
+
         if (!str_starts_with($encrypted, 'enc:')) {
             throw DecryptionException::invalidPayload();
         }
 
-        return substr((string) base64_decode(substr($encrypted, 4)), 17);
+        $parts = explode('|', (string) base64_decode(substr($encrypted, 4)), 3);
+
+        if (count($parts) !== 3) {
+            throw DecryptionException::invalidPayload();
+        }
+
+        if ($parts[1] !== bin2hex($aad)) {
+            throw DecryptionException::invalidKey();
+        }
+
+        return $parts[2];
     }
 }
 
@@ -56,6 +84,10 @@ class SecretRecord extends Entity
     #[Column]
     #[Encrypted]
     public string $secret = '';
+
+    #[Column]
+    #[Encrypted]
+    public string $hint = '';
 
     #[Column]
     #[Encrypted]
@@ -145,7 +177,7 @@ function encryptedConnection(): RecordingSqliteConnection
 {
     $connection = new RecordingSqliteConnection();
     $connection->createTable(
-        'CREATE TABLE secret_records (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT, secret TEXT, '
+        'CREATE TABLE secret_records (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT, secret TEXT, hint TEXT, '
         . 'pin TEXT, flag TEXT, payload TEXT, seen_at TEXT)',
     );
 
@@ -322,3 +354,48 @@ it('throws when query criteria target an encrypted property', function (): void 
         ->and(fn () => $repository->existsBy(['secret' => 'x']))
         ->toThrow(EntityException::class, 'encrypted property');
 });
+
+it('binds each encrypted value to its table and column as associated data', function (): void {
+    FakeRandomEncryptor::$aads = [];
+    $repository = encryptedRepository(encryptedConnection());
+
+    $record = new SecretRecord();
+    $record->secret = 'top-secret';
+    $repository->save($record);
+
+    expect(FakeRandomEncryptor::$aads)->toContain('secret_records.secret')
+        ->and(FakeRandomEncryptor::$aads)->toContain('secret_records.hint')
+        ->and(FakeRandomEncryptor::$aads)->not->toContain('');
+});
+
+it('refuses to hydrate ciphertext copied from another encrypted column', function (): void {
+    $connection = encryptedConnection();
+    $repository = encryptedRepository($connection);
+
+    $record = new SecretRecord();
+    $record->secret = 'top-secret';
+    $record->hint = 'harmless';
+    $repository->save($record);
+
+    $connection->execute('UPDATE secret_records SET hint = secret WHERE id = ?', [$record->id]);
+
+    try {
+        encryptedRepository($connection)->find($record->id);
+        $this->fail('Expected EntityException');
+    } catch (EntityException $e) {
+        expect($e->getMessage())->toContain("column 'hint'")
+            ->and($e->getPrevious())->toBeInstanceOf(DecryptionException::class);
+    }
+});
+
+it('records the table name on property metadata', function (): void {
+    $metadata = new EntityMetadataFactory(encryptedContainer())->parse(SecretRecord::class);
+
+    expect($metadata->getProperty('secret')->tableName)->toBe('secret_records');
+});
+
+it('throws when encrypting a property whose metadata has no table name', function (): void {
+    $cast = new EncryptedCast(new FakeRandomEncryptor());
+
+    $cast->toDatabase('value', new PropertyMetadata(name: 'secret', columnName: 'secret', type: 'string'));
+})->throws(EncryptionException::class, "Cannot encrypt property 'secret' without a table name");
