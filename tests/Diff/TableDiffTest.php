@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Marko\Database\Tests\Diff;
 
 use Marko\Database\Diff\TableDiff;
+use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Schema\Column;
 use Marko\Database\Schema\ForeignKey;
 use Marko\Database\Schema\Index;
@@ -62,6 +63,42 @@ describe('TableDiff', function (): void {
             ->and($diff->foreignKeysToAdd)->toBe($foreignKeysToAdd)
             ->and($diff->foreignKeysToDrop)->toBe($foreignKeysToDrop);
     });
+
+    it('defaults columnsToModifyFrom to an empty array', function (): void {
+        $diff = new TableDiff(
+            tableName: 'posts',
+            columnsToModify: ['title' => new Column(name: 'title', type: 'TEXT')],
+        );
+
+        expect($diff->columnsToModifyFrom)->toBe([]);
+    });
+
+    it('returns the previous definition of a modified column', function (): void {
+        $previous = new Column(name: 'title', type: 'VARCHAR');
+
+        $diff = new TableDiff(
+            tableName: 'posts',
+            columnsToModify: ['title' => new Column(name: 'title', type: 'TEXT')],
+            columnsToModifyFrom: ['title' => $previous],
+        );
+
+        expect($diff->previousColumn('title'))->toBe($previous);
+    });
+
+    it(
+        'throws a MigrationException naming the table and column when the previous definition is missing',
+        function (): void {
+            $diff = new TableDiff(
+                tableName: 'posts',
+                columnsToModify: ['title' => new Column(name: 'title', type: 'TEXT')],
+            );
+
+            expect(fn () => $diff->previousColumn('title'))->toThrow(
+                MigrationException::class,
+                "Column 'posts.title' is modified, but the diff holds no previous definition for it",
+            );
+        },
+    );
 
     it('reports isEmpty correctly', function (): void {
         $emptyDiff = new TableDiff(tableName: 'posts');

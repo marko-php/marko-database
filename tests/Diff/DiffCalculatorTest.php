@@ -242,6 +242,54 @@ describe('DiffCalculator', function (): void {
             ->and($tableDiff->columnsToModify['status']->default)->toBe('published');
     });
 
+    it('puts the database column into columnsToModifyFrom for a nullability-only change', function (): void {
+        $databaseColumn = new Column(name: 'bio', type: 'TEXT', nullable: false);
+
+        $diff = $this->calculator->calculate(
+            ['posts' => new Table(name: 'posts', columns: [new Column(name: 'bio', type: 'TEXT', nullable: true)])],
+            ['posts' => new Table(name: 'posts', columns: [$databaseColumn])],
+        );
+
+        expect($diff->tablesToAlter['posts']->columnsToModifyFrom)->toBe(['bio' => $databaseColumn]);
+    });
+
+    it('puts the database column into columnsToModifyFrom for a default-only change', function (): void {
+        $databaseColumn = new Column(name: 'status', type: 'VARCHAR', default: 'draft');
+
+        $diff = $this->calculator->calculate(
+            ['posts' => new Table(
+                name: 'posts',
+                columns: [new Column(name: 'status', type: 'VARCHAR', default: 'live')],
+            )],
+            ['posts' => new Table(name: 'posts', columns: [$databaseColumn])],
+        );
+
+        expect($diff->tablesToAlter['posts']->columnsToModifyFrom)->toBe(['status' => $databaseColumn]);
+    });
+
+    it('keys columnsToModifyFrom by the same column names as columnsToModify', function (): void {
+        $diff = $this->calculator->calculate(
+            ['posts' => new Table(name: 'posts', columns: [
+                new Column(name: 'id', type: 'INT', primaryKey: true),
+                new Column(name: 'title', type: 'VARCHAR', nullable: true),
+                new Column(name: 'views', type: 'BIGINT'),
+                new Column(name: 'status', type: 'VARCHAR', default: 'live'),
+            ])],
+            ['posts' => new Table(name: 'posts', columns: [
+                new Column(name: 'id', type: 'INT', primaryKey: true),
+                new Column(name: 'title', type: 'VARCHAR'),
+                new Column(name: 'views', type: 'INT'),
+                new Column(name: 'status', type: 'VARCHAR', default: 'live'),
+            ])],
+        );
+
+        $tableDiff = $diff->tablesToAlter['posts'];
+
+        expect(array_keys($tableDiff->columnsToModifyFrom))->toBe(['title', 'views'])
+            ->and(array_keys($tableDiff->columnsToModify))->toBe(['title', 'views'])
+            ->and($tableDiff->columnsToModifyFrom['views']->type)->toBe('INT');
+    });
+
     it('detects new indexes', function (): void {
         $entitySchema = [
             'posts' => new Table(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Marko\Database\Diff;
 
+use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Schema\Column;
 use Marko\Database\Schema\ForeignKey;
 use Marko\Database\Schema\Index;
@@ -18,6 +19,8 @@ readonly class TableDiff
      * @param array<Index> $indexesToDrop
      * @param array<ForeignKey> $foreignKeysToAdd
      * @param array<ForeignKey> $foreignKeysToDrop
+     * @param array<string, Column> $columnsToModifyFrom The database's current definition of each column in
+     *                                                   $columnsToModify, keyed by the same column names
      */
     public function __construct(
         public string $tableName,
@@ -28,7 +31,20 @@ readonly class TableDiff
         public array $indexesToDrop = [],
         public array $foreignKeysToAdd = [],
         public array $foreignKeysToDrop = [],
+        public array $columnsToModifyFrom = [],
     ) {}
+
+    /**
+     * The database's current definition of a column in $columnsToModify.
+     *
+     * @throws MigrationException When the diff holds no previous definition for the column
+     */
+    public function previousColumn(
+        string $columnName,
+    ): Column {
+        return $this->columnsToModifyFrom[$columnName]
+            ?? throw MigrationException::missingPreviousColumn($this->tableName, $columnName);
+    }
 
     public function isEmpty(): bool
     {

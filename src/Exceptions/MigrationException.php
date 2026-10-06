@@ -34,6 +34,45 @@ class MigrationException extends MarkoException
         );
     }
 
+    public static function missingPreviousColumn(
+        string $table,
+        string $column,
+    ): self {
+        return new self(
+            message: "Column '$table.$column' is modified, but the diff holds no previous definition for it",
+            context: "While generating SQL to modify column '$table.$column'",
+            suggestion: 'Build the TableDiff with columnsToModifyFrom holding the database\'s current definition of '
+                . 'every column in columnsToModify (DiffCalculator does this for you).',
+        );
+    }
+
+    public static function nothingToModify(
+        string $table,
+        string $column,
+        string $driver,
+    ): self {
+        return new self(
+            message: "Column '$table.$column' has no type, nullability or default change for $driver to apply",
+            context: "While generating SQL to modify column '$table.$column'",
+            suggestion: 'Only call generateModifyColumn() when the type, nullability or default differs. A uniqueness '
+                . 'change is applied through the index diff.',
+        );
+    }
+
+    public static function columnChangeNotSupported(
+        string $table,
+        string $column,
+        string $driver,
+        string $change,
+    ): self {
+        return new self(
+            message: "Cannot change the $change of column '$table.$column' in place on $driver",
+            context: "While generating SQL to modify column '$table.$column'",
+            suggestion: 'Write this change by hand in a migration (for example, add a new column, copy the data and '
+                . 'drop the old one), then run db:migrate again.',
+        );
+    }
+
     public static function migrationNotFound(
         string $migrationName,
     ): self {

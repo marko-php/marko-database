@@ -67,15 +67,18 @@ class DiffCalculator
         Table $entityTable,
         Table $databaseTable,
     ): TableDiff {
+        $columnsToModify = $this->findColumnsToModify(
+            $entityTable->columns,
+            $databaseTable->columns,
+            $entityTable->indexes,
+        );
+        $databaseColumns = $this->indexColumnsByName($databaseTable->columns);
+
         return new TableDiff(
             tableName: $entityTable->name,
             columnsToAdd: $this->findColumnsToAdd($entityTable->columns, $databaseTable->columns),
             columnsToDrop: $this->findColumnsToDrop($entityTable->columns, $databaseTable->columns),
-            columnsToModify: $this->findColumnsToModify(
-                $entityTable->columns,
-                $databaseTable->columns,
-                $entityTable->indexes,
-            ),
+            columnsToModify: $columnsToModify,
             indexesToAdd: $this->findIndexesToAdd($entityTable->indexes, $databaseTable->indexes),
             indexesToDrop: $this->findIndexesToDrop(
                 $entityTable->indexes,
@@ -85,6 +88,7 @@ class DiffCalculator
             ),
             foreignKeysToAdd: $this->findForeignKeysToAdd($entityTable->foreignKeys, $databaseTable->foreignKeys),
             foreignKeysToDrop: $this->findForeignKeysToDrop($entityTable->foreignKeys, $databaseTable->foreignKeys),
+            columnsToModifyFrom: array_intersect_key($databaseColumns, $columnsToModify),
         );
     }
 
