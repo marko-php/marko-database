@@ -85,9 +85,11 @@ readonly class DatabaseTimezoneConfig
     }
 
     /**
+     * Validate a configured timezone name. Shared with DatabaseConfig, which reads the same key.
+     *
      * @throws ConfigurationException
      */
-    private static function resolveTimezone(
+    public static function resolveTimezone(
         mixed $name,
     ): DateTimeZone {
         if (!is_string($name) || $name === '') {
