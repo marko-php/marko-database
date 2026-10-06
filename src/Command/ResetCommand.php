@@ -12,7 +12,7 @@ use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
 
 /** @noinspection PhpUnused */
-#[Command(name: 'db:reset', description: 'Rollback all database migrations', flags: ['force'])]
+#[Command(name: 'db:reset', description: 'Rollback all database migrations', flags: ['force'], destructive: true)]
 readonly class ResetCommand implements CommandInterface
 {
     public function __construct(

@@ -47,6 +47,7 @@ use Marko\Database\Schema\Table;
     name: 'db:migrate',
     description: 'Apply database migrations',
     flags: ['generate', 'no-generate', 'force', 'verbose', 'v'],
+    destructive: true,
 )]
 readonly class MigrateCommand implements CommandInterface
 {

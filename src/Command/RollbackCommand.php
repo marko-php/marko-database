@@ -12,7 +12,12 @@ use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
 
 /** @noinspection PhpUnused */
-#[Command(name: 'db:rollback', description: 'Rollback the last batch of migrations', flags: ['force'])]
+#[Command(
+    name: 'db:rollback',
+    description: 'Rollback the last batch of migrations',
+    flags: ['force'],
+    destructive: true,
+)]
 readonly class RollbackCommand implements CommandInterface
 {
     public function __construct(

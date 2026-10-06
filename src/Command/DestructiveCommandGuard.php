@@ -25,6 +25,11 @@ use Marko\Core\Environment\AppEnvironment;
  * per call with allowInProduction: production is then treated like staging, so it still needs
  * --force and still asks when someone can answer. confirmInDevelopment makes development and
  * testing ask for confirmation too when someone can answer.
+ *
+ * --force is the terminal confirmation only. A command that calls this guard must also be marked
+ * #[Command(destructive: true)]: callers that run commands for someone else (the MCP run_console_command
+ * tool) read that marker, not the presence of a force flag, and a repository test fails when a
+ * shipped command that depends on this guard is unmarked.
  */
 readonly class DestructiveCommandGuard
 {

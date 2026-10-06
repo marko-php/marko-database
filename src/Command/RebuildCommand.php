@@ -12,7 +12,12 @@ use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
 
 /** @noinspection PhpUnused */
-#[Command(name: 'db:rebuild', description: 'Reset and re-run all migrations (clean slate)', flags: ['force'])]
+#[Command(
+    name: 'db:rebuild',
+    description: 'Reset and re-run all migrations (clean slate)',
+    flags: ['force'],
+    destructive: true,
+)]
 readonly class RebuildCommand implements CommandInterface
 {
     public function __construct(
