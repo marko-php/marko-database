@@ -46,6 +46,16 @@ class MigrationException extends MarkoException
         );
     }
 
+    public static function emptyDefaultExpression(): self
+    {
+        return new self(
+            message: 'A default expression cannot be empty',
+            context: 'While creating a column default Expression',
+            suggestion: "Pass the SQL of the default, such as new Expression('gen_random_uuid()'), or remove the "
+                . 'default.',
+        );
+    }
+
     public static function nothingToModify(
         string $table,
         string $column,

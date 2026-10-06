@@ -117,6 +117,41 @@ readonly class Column
     }
 
     /**
+     * Whether both columns have the same default, without the tolerance equals() applies to an entity that
+     * declares none.
+     *
+     * A shortcut string (`'NOW()'`) is the same default as the matching Expression, expressions compare as
+     * Expression::equals() does, and a Literal is the same default as the plain string it holds.
+     */
+    public function hasSameDefaultAs(
+        self $other,
+    ): bool {
+        return self::canonicalDefault($this->default) === self::canonicalDefault($other->default);
+    }
+
+    /**
+     * The default as the diff compares it: an expression (or shortcut string) becomes its normalized SQL,
+     * tagged so it never equals a string literal with the same text, and a Literal becomes its string.
+     */
+    private static function canonicalDefault(
+        mixed $default,
+    ): mixed {
+        if ($default instanceof Literal) {
+            return $default->value;
+        }
+
+        if ($default instanceof Expression) {
+            return ['expression' => Expression::normalize($default->sql)];
+        }
+
+        if (is_string($default) && Expression::isShortcut($default)) {
+            return ['expression' => Expression::normalize($default)];
+        }
+
+        return $default;
+    }
+
+    /**
      * Types that are logically equivalent when stored in the database.
      * For example, 'enum' is stored as 'varchar' in PostgreSQL.
      */
@@ -203,8 +238,7 @@ readonly class Column
     private function defaultEquals(
         self $other,
     ): bool {
-        // If both are same, they're equal
-        if ($this->default === $other->default) {
+        if ($this->hasSameDefaultAs($other)) {
             return true;
         }
 
