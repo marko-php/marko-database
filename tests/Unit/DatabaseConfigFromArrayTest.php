@@ -92,6 +92,87 @@ describe('DatabaseConfig::fromArray()', function (): void {
         ]))->toThrow(ConfigurationException::class, 'ssl_cert');
     });
 
+    it('throws ConfigurationException when a MySQL client certificate is set without ssl_ca', function (): void {
+        expect(fn () => DatabaseConfig::fromArray([
+            'driver' => 'mysql',
+            'host' => 'db.example.com',
+            'port' => 3306,
+            'database' => 'mydb',
+            'username' => 'admin',
+            'password' => 'secret',
+            'ssl_cert' => '/path/to/cert.pem',
+            'ssl_key' => '/path/to/key.pem',
+        ]))->toThrow(ConfigurationException::class, 'ssl_ca');
+    });
+
+    it(
+        'throws ConfigurationException for a MySQL client certificate without ssl_ca when verify is true',
+        function (): void {
+            expect(fn () => DatabaseConfig::fromArray([
+                'driver' => 'mysql',
+                'host' => 'db.example.com',
+                'port' => 3306,
+                'database' => 'mydb',
+                'username' => 'admin',
+                'password' => 'secret',
+                'ssl_verify_server_cert' => true,
+                'ssl_cert' => '/path/to/cert.pem',
+                'ssl_key' => '/path/to/key.pem',
+            ]))->toThrow(ConfigurationException::class, 'ssl_ca');
+        },
+    );
+
+    it('allows a MySQL client certificate without ssl_ca when verify is explicitly false', function (): void {
+        $config = DatabaseConfig::fromArray([
+            'driver' => 'mysql',
+            'host' => 'db.example.com',
+            'port' => 3306,
+            'database' => 'mydb',
+            'username' => 'admin',
+            'password' => 'secret',
+            'ssl_verify_server_cert' => false,
+            'ssl_cert' => '/path/to/cert.pem',
+            'ssl_key' => '/path/to/key.pem',
+        ]);
+
+        expect($config->sslCert)->toBe('/path/to/cert.pem')
+            ->and($config->sslVerifyServerCert)->toBeFalse();
+    });
+
+    it('allows a MySQL client certificate when ssl_ca is set', function (): void {
+        $config = DatabaseConfig::fromArray([
+            'driver' => 'mysql',
+            'host' => 'db.example.com',
+            'port' => 3306,
+            'database' => 'mydb',
+            'username' => 'admin',
+            'password' => 'secret',
+            'ssl_ca' => '/path/to/ca.pem',
+            'ssl_cert' => '/path/to/cert.pem',
+            'ssl_key' => '/path/to/key.pem',
+        ]);
+
+        expect($config->sslRootCert)->toBe('/path/to/ca.pem')
+            ->and($config->sslVerifyServerCert)->toBeTrue();
+    });
+
+    it('leaves a PostgreSQL client certificate without ssl_ca to sslmode', function (): void {
+        $config = DatabaseConfig::fromArray([
+            'driver' => 'pgsql',
+            'host' => 'db.example.com',
+            'port' => 5432,
+            'database' => 'mydb',
+            'username' => 'admin',
+            'password' => 'secret',
+            'sslmode' => 'verify-full',
+            'ssl_cert' => '/path/to/cert.pem',
+            'ssl_key' => '/path/to/key.pem',
+        ]);
+
+        expect($config->sslCert)->toBe('/path/to/cert.pem')
+            ->and($config->sslMode)->toBe('verify-full');
+    });
+
     it('populates SSL fields when provided', function (): void {
         $config = DatabaseConfig::fromArray([
             'driver' => 'pgsql',

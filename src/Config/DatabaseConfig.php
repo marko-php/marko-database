@@ -167,6 +167,16 @@ readonly class DatabaseConfig
             throw ConfigurationException::incompleteSslKeyPair('ssl_key', 'ssl_cert');
         }
 
+        // MySQL verifies the server certificate only against ssl_ca, so a client certificate without a CA
+        // would encrypt the connection without proving who is on the other end. PostgreSQL leaves this to
+        // sslmode (verify-full reads ~/.postgresql/root.crt when no ssl_ca is given).
+        $isMysql = $config['driver'] === 'mysql';
+        $verifyExplicitlyDisabled = ($config['ssl_verify_server_cert'] ?? null) === false;
+
+        if ($isMysql && $sslCert !== null && ($config['ssl_ca'] ?? null) === null && !$verifyExplicitlyDisabled) {
+            throw ConfigurationException::unverifiedSslClientCertificate();
+        }
+
         $ignoreIndexes = $config['migrations']['ignore_indexes'] ?? [];
 
         $isListOfStrings = is_array($ignoreIndexes)
