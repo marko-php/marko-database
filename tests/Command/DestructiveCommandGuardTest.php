@@ -112,3 +112,126 @@ it('does not ask without --force even when interactive', function (): void {
     expect($check['result'])->toBe(1);
     $prompter->assertNothingAsked();
 });
+
+/**
+ * Run the guard with the opt-ins a production-safe command passes (allowed in production with --force,
+ * confirmed in development).
+ *
+ * @param array<string> $arguments
+ * @return array{result: ?int, output: string}
+ */
+function checkOptedInDestructiveCommand(
+    ?string $environment,
+    array $arguments,
+    ConfirmationPrompterInterface $prompter,
+    bool $allowInProduction = true,
+): array {
+    $guard = Helpers::createDestructiveCommandGuard($environment, $prompter);
+    ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
+
+    $result = $guard->check(
+        'perms:prune',
+        'deletes stale permissions',
+        new Input($arguments),
+        $output,
+        allowInProduction: $allowInProduction,
+        confirmInDevelopment: true,
+    );
+
+    return ['result' => $result, 'output' => Helpers::getOutputContent($stream)];
+}
+
+it('refuses production without --force when production is allowed', function (string $environment): void {
+    $prompter = new FakeConfirmationPrompter();
+
+    $check = checkOptedInDestructiveCommand($environment, ['marko', 'perms:prune'], $prompter);
+
+    expect($check['result'])->toBe(1)
+        ->and($check['output'])->toContain(
+            "Error: perms:prune is refused in the '$environment' environment without --force.",
+        )
+        ->and($check['output'])->toContain('Re-run with --force')
+        ->and($check['output'])->not->toContain('never allowed in production');
+    $prompter->assertNothingAsked();
+})->with(['production', 'prod']);
+
+it('runs in production with --force when production is allowed and nobody can answer', function (): void {
+    $prompter = new FakeConfirmationPrompter(interactive: false);
+
+    $check = checkOptedInDestructiveCommand('production', ['marko', 'perms:prune', '--force'], $prompter);
+
+    expect($check['result'])->toBeNull()
+        ->and($check['output'])->toBe('');
+});
+
+it(
+    'asks for confirmation in production with --force when production is allowed and interactive',
+    function (): void {
+        $prompter = new FakeConfirmationPrompter(answers: [false]);
+
+        $check = checkOptedInDestructiveCommand('production', ['marko', 'perms:prune', '--force'], $prompter);
+
+        expect($check['result'])->toBe(0)
+            ->and($check['output'])->toContain('perms:prune cancelled.');
+        $prompter->assertAsked("perms:prune deletes stale permissions in the 'production' environment. Continue?");
+    },
+);
+
+it('treats an unset environment as production when production is allowed', function (): void {
+    $prompter = new FakeConfirmationPrompter(interactive: false);
+
+    $refused = checkOptedInDestructiveCommand(null, ['marko', 'perms:prune'], $prompter);
+    $forced = checkOptedInDestructiveCommand(null, ['marko', 'perms:prune', '--force'], $prompter);
+
+    expect($refused['result'])->toBe(1)
+        ->and($refused['output'])->toContain("'production' environment without --force")
+        ->and($forced['result'])->toBeNull();
+});
+
+it(
+    'asks for confirmation in development when confirmInDevelopment is set and interactive',
+    function (string $environment): void {
+        $prompter = new FakeConfirmationPrompter(answers: [true]);
+
+        $check = checkOptedInDestructiveCommand($environment, ['marko', 'perms:prune'], $prompter);
+
+        expect($check['result'])->toBeNull();
+        $prompter->assertAsked("perms:prune deletes stale permissions in the '$environment' environment. Continue?");
+    },
+)->with(['development', 'testing']);
+
+it(
+    'runs in development without asking when confirmInDevelopment is set and nobody can answer',
+    function (): void {
+        $prompter = new FakeConfirmationPrompter(interactive: false);
+
+        $check = checkOptedInDestructiveCommand('development', ['marko', 'perms:prune'], $prompter);
+
+        expect($check['result'])->toBeNull()
+            ->and($check['output'])->toBe('');
+    },
+);
+
+it('cancels in development when confirmInDevelopment is set and the answer is no', function (): void {
+    $prompter = new FakeConfirmationPrompter(answers: [false]);
+
+    $check = checkOptedInDestructiveCommand('local', ['marko', 'perms:prune'], $prompter);
+
+    expect($check['result'])->toBe(0)
+        ->and($check['output'])->toContain('perms:prune cancelled.');
+});
+
+it('still refuses production with --force when only confirmInDevelopment is set', function (): void {
+    $prompter = new FakeConfirmationPrompter();
+
+    $check = checkOptedInDestructiveCommand(
+        'production',
+        ['marko', 'perms:prune', '--force'],
+        $prompter,
+        allowInProduction: false,
+    );
+
+    expect($check['result'])->toBe(1)
+        ->and($check['output'])->toContain('never allowed in production, even with --force');
+    $prompter->assertNothingAsked();
+});
