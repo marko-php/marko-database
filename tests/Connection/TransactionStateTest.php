@@ -185,7 +185,7 @@ describe('TransactionState', function (): void {
         function (): void {
             $state = new TransactionState();
             $log = [];
-    
+
             $state->begin();
             $state->afterCommit(function () use (&$log): void {
                 $log[] = 'outer';
@@ -195,10 +195,10 @@ describe('TransactionState', function (): void {
                 $log[] = 'inner';
             });
             $state->runAfterCommitCallbacks();
-    
+
             expect($log)->toBe(['outer', 'inner'])
                 ->and($state->level())->toBe(2);
-        }
+        },
     );
 
     it('removes the callbacks it ran so a later commit does not run them again', function (): void {
