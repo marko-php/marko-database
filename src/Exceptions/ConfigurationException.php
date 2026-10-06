@@ -51,6 +51,15 @@ class ConfigurationException extends MarkoException
         );
     }
 
+    public static function unverifiedSslClientCertificate(): self
+    {
+        return new self(
+            message: "SSL client certificate 'ssl_cert' is set but 'ssl_ca' is missing, so the MySQL server certificate would not be verified",
+            context: 'While validating database SSL configuration',
+            suggestion: "Set 'ssl_ca' to the CA certificate that signed the server certificate. If you deliberately accept an unverified server, set 'ssl_verify_server_cert' => false",
+        );
+    }
+
     public static function invalidTimezone(
         string $timezone,
     ): self {
