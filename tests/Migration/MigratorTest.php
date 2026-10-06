@@ -457,4 +457,106 @@ PHP;
                 '2024_01_01_000000_first',
             ]);
     });
+
+    it('refuses to roll back a migration name that traverses outside the migrations directory', function (): void {
+        // A planted file outside database/migrations that must never be required
+        $marker = $this->basePath . '/storage/uploads/required.marker';
+        mkdir($this->basePath . '/storage/uploads', 0777, true);
+        file_put_contents(
+            $this->basePath . '/storage/uploads/shell.php',
+            "<?php\nfile_put_contents('$marker', 'pwned');\nreturn null;\n",
+        );
+
+        $connection = $this->createStub(ConnectionInterface::class);
+
+        $deleted = [];
+        $repository = $this->createStub(MigrationRepository::class);
+        $repository->method('createTable');
+        $repository->method('getLastBatchMigrations')->willReturn(['../../storage/uploads/shell']);
+        $repository->method('delete')
+            ->willReturnCallback(function ($conn, $name) use (&$deleted): void {
+                $deleted[] = $name;
+            });
+
+        $migrator = new Migrator($connection, $repository, $this->paths);
+
+        expect(fn () => $migrator->rollback())
+            ->toThrow(MigrationException::class, "Invalid migration name '../../storage/uploads/shell'")
+            ->and(file_exists($marker))->toBeFalse()
+            ->and($deleted)->toBe([]);
+    });
+
+    it('refuses to reset when a migration name traverses outside the migrations directory', function (): void {
+        $marker = $this->basePath . '/storage/uploads/required.marker';
+        mkdir($this->basePath . '/storage/uploads', 0777, true);
+        file_put_contents(
+            $this->basePath . '/storage/uploads/shell.php',
+            "<?php\nfile_put_contents('$marker', 'pwned');\nreturn null;\n",
+        );
+        file_put_contents($this->migrationsPath . '/2024_01_01_000000_first.php', Helpers::getEmptyMigrationContent());
+
+        $connection = $this->createStub(ConnectionInterface::class);
+
+        $deleted = [];
+        $repository = $this->createStub(MigrationRepository::class);
+        $repository->method('createTable');
+        $repository->method('getApplied')->willReturn([
+            '2024_01_01_000000_first',
+            '../../storage/uploads/shell',
+        ]);
+        $repository->method('delete')
+            ->willReturnCallback(function ($conn, $name) use (&$deleted): void {
+                $deleted[] = $name;
+            });
+
+        $migrator = new Migrator($connection, $repository, $this->paths);
+
+        // Every name is resolved before any down() runs, so the legitimate migration is left untouched too
+        expect(fn () => $migrator->reset())
+            ->toThrow(MigrationException::class, "Invalid migration name '../../storage/uploads/shell'")
+            ->and(file_exists($marker))->toBeFalse()
+            ->and($deleted)->toBe([]);
+    });
+
+    it('rejects migration names containing path separators, parent segments or NUL bytes', function (
+        string $name,
+    ): void {
+        $connection = $this->createStub(ConnectionInterface::class);
+
+        $repository = $this->createStub(MigrationRepository::class);
+        $repository->method('createTable');
+        $repository->method('getLastBatchMigrations')->willReturn([$name]);
+
+        $migrator = new Migrator($connection, $repository, $this->paths);
+
+        expect(fn () => $migrator->rollback())
+            ->toThrow(MigrationException::class, 'Invalid migration name');
+    })->with([
+        'forward slash' => ['sub/2024_01_01_000000_first'],
+        'backslash' => ['sub\\2024_01_01_000000_first'],
+        'parent segment' => ['..'],
+        'embedded parent segment' => ['2024..first'],
+        'NUL byte' => ["2024_01_01_000000_first\0"],
+    ]);
+
+    it('refuses to roll back a name that is not a migration file found by the directory scan', function (): void {
+        // A dotfile sits at the built path, but the *.php glob never lists it as a migration
+        $marker = $this->migrationsPath . '/required.marker';
+        file_put_contents(
+            $this->migrationsPath . '/.hidden.php',
+            "<?php\nfile_put_contents('$marker', 'pwned');\nreturn null;\n",
+        );
+
+        $connection = $this->createStub(ConnectionInterface::class);
+
+        $repository = $this->createStub(MigrationRepository::class);
+        $repository->method('createTable');
+        $repository->method('getLastBatchMigrations')->willReturn(['.hidden']);
+
+        $migrator = new Migrator($connection, $repository, $this->paths);
+
+        expect(fn () => $migrator->rollback())
+            ->toThrow(MigrationException::class, "Migration file for '.hidden' not found")
+            ->and(file_exists($marker))->toBeFalse();
+    });
 });

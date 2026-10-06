@@ -5,6 +5,16 @@ declare(strict_types=1);
 use Marko\Database\Exceptions\MigrationException;
 
 describe('MigrationException', function (): void {
+    it('builds an invalid migration name exception naming the rejected name', function (): void {
+        $exception = MigrationException::invalidMigrationName('../../storage/uploads/shell');
+
+        expect($exception->getMessage())
+            ->toBe("Invalid migration name '../../storage/uploads/shell': names must not contain '/', '\\', '..' or "
+                . 'NUL bytes')
+            ->and($exception->getContext())->toContain('migrations table')
+            ->and($exception->getSuggestion())->toContain('database/migrations/');
+    });
+
     it('builds a missing previous column exception naming the table and column', function (): void {
         $exception = MigrationException::missingPreviousColumn('posts', 'status');
 

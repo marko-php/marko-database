@@ -134,6 +134,17 @@ class MigrationException extends MarkoException
         );
     }
 
+    public static function invalidMigrationName(
+        string $migrationName,
+    ): self {
+        return new self(
+            message: "Invalid migration name '$migrationName': names must not contain '/', '\\', '..' or NUL bytes",
+            context: 'While resolving a migration name read from the migrations table',
+            suggestion: 'Migration names are plain file names in database/migrations/. Remove or correct the row in '
+                . 'the migrations table; a name like this suggests the table was tampered with.',
+        );
+    }
+
     public static function invalidMigration(
         string $migrationName,
     ): self {

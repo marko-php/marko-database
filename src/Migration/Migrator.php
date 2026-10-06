@@ -65,6 +65,7 @@ class Migrator
         $this->ensureTable();
 
         $migrations = $this->repository->getLastBatchMigrations($this->connection);
+        $this->assertKnownMigrations($migrations);
         $rolledBack = [];
 
         foreach ($migrations as $name) {
@@ -91,6 +92,7 @@ class Migrator
 
         // Roll back in reverse order
         $migrations = array_reverse($applied);
+        $this->assertKnownMigrations($migrations);
 
         foreach ($migrations as $name) {
             $this->runMigration($name, 'down');
@@ -181,6 +183,37 @@ class Migrator
         sort($names);
 
         return $names;
+    }
+
+    /**
+     * Ensure every name read from the migrations table is a migration file in the migrations directory.
+     *
+     * Names come from the database, so they are never trusted to build a path: each must be a plain file name
+     * that the directory scan found. All names are checked before any migration runs, so a bad row aborts the
+     * whole rollback instead of leaving it half done.
+     *
+     * @param array<string> $names
+     * @throws MigrationException If a name is not a plain file name, or no such migration file exists
+     */
+    private function assertKnownMigrations(
+        array $names,
+    ): void {
+        $known = $this->getMigrationFiles();
+
+        foreach ($names as $name) {
+            if (
+                str_contains($name, '/')
+                || str_contains($name, '\\')
+                || str_contains($name, '..')
+                || str_contains($name, "\0")
+            ) {
+                throw MigrationException::invalidMigrationName($name);
+            }
+
+            if (!in_array($name, $known, true)) {
+                throw MigrationException::migrationNotFound($name);
+            }
+        }
     }
 
     /**
