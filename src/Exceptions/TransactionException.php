@@ -31,6 +31,17 @@ class TransactionException extends MarkoException
         );
     }
 
+    public static function invalidAttempts(
+        int $attempts,
+    ): self {
+        return new self(
+            message: "A transaction needs at least 1 attempt, $attempts attempts given",
+            context: 'Calling TransactionInterface::transaction() with an attempts argument below 1',
+            suggestion: 'Pass attempts: 1 (the default) to run the transaction once, or a higher number to '
+                . 'retry it on a deadlock or serialization failure',
+        );
+    }
+
     public static function notInTransaction(): self
     {
         return new self(

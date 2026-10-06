@@ -217,6 +217,7 @@ describe('SeederRunner', function (): void {
 
             public function transaction(
                 callable $callback,
+                int $attempts = 1,
             ): mixed {
                 $this->beginTransaction();
                 try {
@@ -294,6 +295,7 @@ describe('SeederRunner', function (): void {
 
             public function transaction(
                 callable $callback,
+                int $attempts = 1,
             ): mixed {
                 $this->beginTransaction();
                 try {

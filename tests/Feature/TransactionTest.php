@@ -110,6 +110,7 @@ describe('Transaction Handling', function (): void {
 
             public function transaction(
                 callable $callback,
+                int $attempts = 1,
             ): mixed {
                 $this->beginTransaction();
 
@@ -243,6 +244,7 @@ describe('Transaction Handling', function (): void {
 
             public function transaction(
                 callable $callback,
+                int $attempts = 1,
             ): mixed {
                 $this->beginTransaction();
 
@@ -379,6 +381,7 @@ describe('Transaction Handling', function (): void {
 
             public function transaction(
                 callable $callback,
+                int $attempts = 1,
             ): null {
                 return null;
             }

@@ -95,8 +95,10 @@ class BatchWithRelationshipRepository extends Repository
 /**
  * Creates a connection that records SQL/bindings and returns lastInsertId = $firstId.
  */
-function makeBatchSpyConnection(array &$sqlLog, int $firstId = 1): ConnectionInterface
-{
+function makeBatchSpyConnection(
+    array &$sqlLog,
+    int $firstId = 1,
+): ConnectionInterface {
     return new class ($sqlLog, $firstId) implements ConnectionInterface
     {
         private bool $shouldThrow = false;
@@ -143,8 +145,9 @@ function makeBatchSpyConnection(array &$sqlLog, int $firstId = 1): ConnectionInt
             return count(explode('),(', $sql));
         }
 
-        public function prepare(string $sql): StatementInterface
-        {
+        public function prepare(
+            string $sql,
+        ): StatementInterface {
             throw new RuntimeException('Not implemented');
         }
 
@@ -163,8 +166,10 @@ function makeBatchSpyConnection(array &$sqlLog, int $firstId = 1): ConnectionInt
 /**
  * Creates a connection that tracks transaction calls alongside SQL log.
  */
-function makeBatchTransactionConnection(array &$log, bool $failInsert = false): ConnectionInterface&TransactionInterface
-{
+function makeBatchTransactionConnection(
+    array &$log,
+    bool $failInsert = false,
+): ConnectionInterface&TransactionInterface {
     return new class ($log, $failInsert) implements ConnectionInterface, TransactionInterface
     {
         private bool $inTx = false;
@@ -203,8 +208,9 @@ function makeBatchTransactionConnection(array &$log, bool $failInsert = false): 
             return 1;
         }
 
-        public function prepare(string $sql): StatementInterface
-        {
+        public function prepare(
+            string $sql,
+        ): StatementInterface {
             throw new RuntimeException('Not implemented');
         }
 
@@ -241,8 +247,10 @@ function makeBatchTransactionConnection(array &$log, bool $failInsert = false): 
             return $this->inTx;
         }
 
-        public function transaction(callable $callback): mixed
-        {
+        public function transaction(
+            callable $callback,
+            int $attempts = 1,
+        ): mixed {
             $this->log[] = ['type' => 'transaction'];
             $this->beginTransaction();
             try {
@@ -272,8 +280,9 @@ class BatchFakeDispatcher implements EventDispatcherInterface
     /** @var array<Event> */
     public array $dispatched = [];
 
-    public function dispatch(Event $event): void
-    {
+    public function dispatch(
+        Event $event,
+    ): void {
         $this->dispatched[] = $event;
     }
 }
@@ -585,8 +594,10 @@ it('handles string primary keys in the batch correctly', function (): void {
  * @param array<int, array<string, mixed>> $returningRows Rows returned from RETURNING clause
  * @param array<array{type: string, sql: string, bindings: array}> $sqlLog Reference for recording SQL calls
  */
-function makePgsqlSpyConnection(array $returningRows, array &$sqlLog): ConnectionInterface
-{
+function makePgsqlSpyConnection(
+    array $returningRows,
+    array &$sqlLog,
+): ConnectionInterface {
     return new class ($returningRows, $sqlLog) implements ConnectionInterface
     {
         public function __construct(
@@ -621,8 +632,9 @@ function makePgsqlSpyConnection(array $returningRows, array &$sqlLog): Connectio
             return count($this->returningRows);
         }
 
-        public function prepare(string $sql): StatementInterface
-        {
+        public function prepare(
+            string $sql,
+        ): StatementInterface {
             throw new RuntimeException('Not implemented');
         }
 
@@ -684,8 +696,9 @@ function makePgsqlTransactionConnection(
             return count($this->returningRows);
         }
 
-        public function prepare(string $sql): StatementInterface
-        {
+        public function prepare(
+            string $sql,
+        ): StatementInterface {
             throw new RuntimeException('Not implemented');
         }
 
@@ -722,8 +735,10 @@ function makePgsqlTransactionConnection(
             return $this->inTx;
         }
 
-        public function transaction(callable $callback): mixed
-        {
+        public function transaction(
+            callable $callback,
+            int $attempts = 1,
+        ): mixed {
             $this->beginTransaction();
             try {
                 $result = $callback();

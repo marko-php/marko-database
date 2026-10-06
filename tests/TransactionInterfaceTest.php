@@ -11,36 +11,38 @@ describe('TransactionInterface', function (): void {
         expect($reflection->isInterface())->toBeTrue()
             ->and($reflection->hasMethod('beginTransaction'))->toBeTrue()
             ->and($reflection->hasMethod('commit'))->toBeTrue()
-            ->and($reflection->hasMethod('rollback'))->toBeTrue();
-
-        $begin = $reflection->getMethod('beginTransaction');
-        expect($begin->getReturnType()?->getName())->toBe('void');
-
-        $commit = $reflection->getMethod('commit');
-        expect($commit->getReturnType()?->getName())->toBe('void');
-
-        $rollback = $reflection->getMethod('rollback');
-        expect($rollback->getReturnType()?->getName())->toBe('void');
+            ->and($reflection->hasMethod('rollback'))->toBeTrue()
+            ->and($reflection->getMethod('beginTransaction')->getReturnType()?->getName())->toBe('void')
+            ->and($reflection->getMethod('commit')->getReturnType()?->getName())->toBe('void')
+            ->and($reflection->getMethod('rollback')->getReturnType()?->getName())->toBe('void');
     });
 
     it('defines TransactionInterface with transaction callback method', function (): void {
         $reflection = new ReflectionClass(TransactionInterface::class);
-
-        expect($reflection->hasMethod('transaction'))->toBeTrue();
-
         $transaction = $reflection->getMethod('transaction');
         $params = $transaction->getParameters();
-        expect($transaction->getReturnType()?->getName())->toBe('mixed')
-            ->and($params)->toHaveCount(1)
+
+        expect($reflection->hasMethod('transaction'))->toBeTrue()
+            ->and($transaction->getReturnType()?->getName())->toBe('mixed')
+            ->and($params)->toHaveCount(2)
             ->and($params[0]->getName())->toBe('callback')
             ->and($params[0]->getType()?->getName())->toBe('callable');
+    });
+
+    it('declares an attempts parameter defaulting to one on TransactionInterface::transaction()', function (): void {
+        $attempts = new ReflectionMethod(TransactionInterface::class, 'transaction')->getParameters()[1];
+
+        expect($attempts->getName())->toBe('attempts')
+            ->and($attempts->getType()?->getName())->toBe('int')
+            ->and($attempts->isOptional())->toBeTrue()
+            ->and($attempts->getDefaultValue())->toBe(1);
     });
 
     it('defines transactionLevel returning int', function (): void {
         $method = new ReflectionMethod(TransactionInterface::class, 'transactionLevel');
 
         expect($method->getReturnType()?->getName())->toBe('int')
-            ->and($method->getParameters())->toBe([]);
+            ->and($method->getParameters())->toBeEmpty();
     });
 
     it('defines afterCommit and afterRollback taking a callable', function (string $name): void {
