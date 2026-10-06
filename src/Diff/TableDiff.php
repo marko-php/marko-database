@@ -21,6 +21,9 @@ readonly class TableDiff
      * @param array<ForeignKey> $foreignKeysToDrop
      * @param array<string, Column> $columnsToModifyFrom The database's current definition of each column in
      *                                                   $columnsToModify, keyed by the same column names
+     * @param list<string> $currentPrimaryKey The columns of the table's current primary key in the database, in column
+     *                                       order; empty when the table has none. Context for the SQL generators,
+     *                                       not a change.
      */
     public function __construct(
         public string $tableName,
@@ -32,6 +35,7 @@ readonly class TableDiff
         public array $foreignKeysToAdd = [],
         public array $foreignKeysToDrop = [],
         public array $columnsToModifyFrom = [],
+        public array $currentPrimaryKey = [],
     ) {}
 
     /**
@@ -44,6 +48,43 @@ readonly class TableDiff
     ): Column {
         return $this->columnsToModifyFrom[$columnName]
             ?? throw MigrationException::missingPreviousColumn($this->tableName, $columnName);
+    }
+
+    /**
+     * Refuse the primary key changes no generated ALTER TABLE can make: adding key columns to a table that
+     * already has a primary key (a table has one; the diff does not replace it, even when this diff drops the
+     * current key's columns), and dropping only some columns of the current key (PostgreSQL would drop the whole
+     * key, MySQL would shrink it).
+     *
+     * @throws MigrationException When the diff adds a key to a table that has one, or drops part of its key
+     */
+    public function assertSupportedPrimaryKeyChange(
+        string $driver,
+    ): void {
+        $addedKeyColumns = array_values(array_map(
+            static fn (Column $column): string => $column->name,
+            array_filter($this->columnsToAdd, static fn (Column $column): bool => $column->primaryKey),
+        ));
+
+        if ($addedKeyColumns !== [] && $this->currentPrimaryKey !== []) {
+            throw MigrationException::primaryKeyAlreadyExists(
+                $this->tableName,
+                $this->currentPrimaryKey,
+                $addedKeyColumns,
+            );
+        }
+
+        $droppedColumns = array_map(static fn (Column $column): string => $column->name, $this->columnsToDrop);
+        $droppedKeyColumns = array_values(array_intersect($this->currentPrimaryKey, $droppedColumns));
+
+        if ($droppedKeyColumns !== [] && $droppedKeyColumns !== $this->currentPrimaryKey) {
+            throw MigrationException::columnChangeNotSupported(
+                $this->tableName,
+                $droppedKeyColumns[0],
+                $driver,
+                'primary key',
+            );
+        }
     }
 
     public function isEmpty(): bool

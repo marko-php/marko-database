@@ -102,6 +102,28 @@ class MigrationException extends MarkoException
         );
     }
 
+    /**
+     * @param list<string> $existingColumns The columns of the table's current primary key
+     * @param list<string> $newColumns The added columns the entity declares as primary key
+     */
+    public static function primaryKeyAlreadyExists(
+        string $table,
+        array $existingColumns,
+        array $newColumns,
+    ): self {
+        $quote = static fn (array $columns): string => "'" . implode("', '", $columns) . "'";
+        $noun = count($newColumns) === 1 ? 'column' : 'columns';
+
+        return new self(
+            message: "Cannot add primary key $noun {$quote($newColumns)} to table '$table', which already has a primary "
+                . "key on {$quote($existingColumns)}",
+            context: "While generating SQL to add columns to table '$table'",
+            suggestion: 'A table has one primary key, and the diff does not replace it. Write this change by hand in a '
+                . 'migration (drop the current primary key, add the new columns and their key), then run db:migrate '
+                . 'again.',
+        );
+    }
+
     public static function migrationNotFound(
         string $migrationName,
     ): self {

@@ -309,6 +309,22 @@ describe('DiffCalculator', function (): void {
             ->and($tableDiff->columnsToModifyFrom['views']->type)->toBe('INT');
     });
 
+    it('fills the current primary key from the database table key columns', function (): void {
+        $diff = $this->calculator->calculate(
+            ['post_tags' => new Table(name: 'post_tags', columns: [
+                new Column(name: 'post_id', type: 'INT', primaryKey: true),
+                new Column(name: 'tag_id', type: 'INT', primaryKey: true),
+                new Column(name: 'weight', type: 'INT'),
+            ])],
+            ['post_tags' => new Table(name: 'post_tags', columns: [
+                new Column(name: 'post_id', type: 'INT', primaryKey: true),
+                new Column(name: 'tag_id', type: 'INT', primaryKey: true),
+            ])],
+        );
+
+        expect($diff->tablesToAlter['post_tags']->currentPrimaryKey)->toBe(['post_id', 'tag_id']);
+    });
+
     it('detects new indexes', function (): void {
         $entitySchema = [
             'posts' => new Table(

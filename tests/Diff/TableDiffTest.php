@@ -191,4 +191,70 @@ describe('TableDiff', function (): void {
             ->toContain('  Modify column: title')
             ->toContain('  Add index: idx_slug');
     });
+
+    it('defaults the current primary key to an empty list', function (): void {
+        expect(new TableDiff(tableName: 'posts')->currentPrimaryKey)->toBe([]);
+    });
+
+    it('keeps the current primary key out of isEmpty so a key alone is no change', function (): void {
+        expect(new TableDiff(tableName: 'posts', currentPrimaryKey: ['id'])->isEmpty())->toBeTrue();
+    });
+
+    it('accepts primary key columns added to a table without a primary key', function (): void {
+        $diff = new TableDiff(tableName: 'post_tags', columnsToAdd: [
+            new Column(name: 'id', type: 'int', primaryKey: true, autoIncrement: true),
+        ]);
+
+        expect(fn () => $diff->assertSupportedPrimaryKeyChange('MySQL'))->not->toThrow(MigrationException::class);
+    });
+
+    it('accepts dropping every column of the current primary key', function (): void {
+        $diff = new TableDiff(
+            tableName: 'posts',
+            columnsToDrop: [new Column(name: 'id', type: 'int', primaryKey: true)],
+            currentPrimaryKey: ['id'],
+        );
+
+        expect(fn () => $diff->assertSupportedPrimaryKeyChange('MySQL'))->not->toThrow(MigrationException::class);
+    });
+
+    it('refuses primary key columns added to a table that already has a primary key', function (): void {
+        $diff = new TableDiff(
+            tableName: 'posts',
+            columnsToAdd: [new Column(name: 'uuid', type: 'uuid', primaryKey: true)],
+            currentPrimaryKey: ['id'],
+        );
+
+        expect(fn () => $diff->assertSupportedPrimaryKeyChange('MySQL'))->toThrow(
+            MigrationException::class,
+            "Cannot add primary key column 'uuid' to table 'posts', which already has a primary key on 'id'",
+        );
+    });
+
+    it('refuses a new primary key even when the diff drops the current key columns', function (): void {
+        $diff = new TableDiff(
+            tableName: 'posts',
+            columnsToAdd: [new Column(name: 'uuid', type: 'uuid', primaryKey: true)],
+            columnsToDrop: [new Column(name: 'id', type: 'int', primaryKey: true)],
+            currentPrimaryKey: ['id'],
+        );
+
+        expect(fn () => $diff->assertSupportedPrimaryKeyChange('PostgreSQL'))->toThrow(
+            MigrationException::class,
+            "Cannot add primary key column 'uuid' to table 'posts', which already has a primary key on 'id'",
+        );
+    });
+
+    it('refuses dropping part of a composite primary key', function (): void {
+        $diff = new TableDiff(
+            tableName: 'post_tags',
+            columnsToDrop: [new Column(name: 'tag_id', type: 'int', primaryKey: true)],
+            currentPrimaryKey: ['post_id', 'tag_id'],
+        );
+
+        expect(fn () => $diff->assertSupportedPrimaryKeyChange('PostgreSQL'))->toThrow(
+            MigrationException::class,
+            "Cannot change the primary key of column 'post_tags.tag_id' in place on PostgreSQL",
+        );
+    });
 });

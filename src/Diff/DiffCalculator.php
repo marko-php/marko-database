@@ -93,6 +93,9 @@ class DiffCalculator
             foreignKeysToAdd: $this->findForeignKeysToAdd($entityTable->foreignKeys, $databaseTable->foreignKeys),
             foreignKeysToDrop: $this->findForeignKeysToDrop($entityTable->foreignKeys, $databaseTable->foreignKeys),
             columnsToModifyFrom: array_intersect_key($databaseColumns, $columnsToModify),
+            currentPrimaryKey: array_values($this->getColumnNames(
+                array_filter($databaseTable->columns, static fn (Column $column): bool => $column->primaryKey),
+            )),
         );
     }
 
