@@ -79,6 +79,12 @@ describe('Transaction Handling', function (): void {
                 return false;
             }
 
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
+            }
+
             public function beginTransaction(): void
             {
                 $this->inTransaction = true;
@@ -223,6 +229,12 @@ describe('Transaction Handling', function (): void {
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
 
             public function beginTransaction(): void
@@ -378,6 +390,12 @@ describe('Transaction Handling', function (): void {
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
 
             public function beginTransaction(): void {}

@@ -46,6 +46,8 @@ function createTrackingConnectionStub(
             array $bindings = [],
         ): array {
             if (str_contains($sql, 'COUNT(*)')) {
+                $this->data[] = $sql;
+
                 return [['count' => 42]];
             }
 
@@ -84,6 +86,12 @@ function createTrackingConnectionStub(
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
 
         public function beginTransaction(): void
@@ -206,9 +214,18 @@ describe('DatabaseTestHelper', function (): void {
 
         expect($executedSql)
             ->toHaveCount(2)
-            ->and($executedSql[0]['sql'])->toContain('INSERT INTO users')
+            ->and($executedSql[0]['sql'])->toContain('INSERT INTO "users"')
             ->and($executedSql[0]['bindings'])->toContain('John')
             ->and($executedSql[1]['bindings'])->toContain('Jane');
+    });
+
+    it('quotes the table and columns in seedTable', function (): void {
+        $executedSql = [];
+        $connection = createTrackingConnectionStub($executedSql, trackBindings: true);
+
+        new DatabaseTestHelper($connection)->seedTable('settings', [['key' => 'a', 'group' => 'g']]);
+
+        expect($executedSql[0]['sql'])->toBe('INSERT INTO "settings" ("key", "group") VALUES (?, ?)');
     });
 
     it('truncates table for cleanup', function (): void {
@@ -220,7 +237,7 @@ describe('DatabaseTestHelper', function (): void {
 
         expect($executedSql)
             ->toHaveCount(1)
-            ->and($executedSql[0])->toContain('DELETE FROM users');
+            ->and($executedSql[0])->toContain('DELETE FROM "users"');
     });
 
     it('gets table row count', function (): void {
@@ -231,6 +248,16 @@ describe('DatabaseTestHelper', function (): void {
         $count = $helper->getTableRowCount('users');
 
         expect($count)->toBe(42);
+    });
+
+    it('quotes the table in truncateTable and getTableRowCount', function (): void {
+        $executedSql = [];
+        $helper = new DatabaseTestHelper(createTrackingConnectionStub($executedSql));
+
+        $helper->truncateTable('order');
+        $helper->getTableRowCount('order');
+
+        expect($executedSql)->toBe(['DELETE FROM "order"', 'SELECT COUNT(*) as count FROM "order"']);
     });
 
     it('rollback is safe to call without active transaction', function (): void {

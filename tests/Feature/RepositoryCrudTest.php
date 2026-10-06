@@ -71,7 +71,7 @@ describe('Repository CRUD Operations', function (): void {
                 $this->queries[] = ['sql' => $sql, 'bindings' => $bindings, 'type' => 'query'];
 
                 // Simulate SELECT by ID
-                if (str_contains($sql, 'WHERE id = ?') && count($bindings) > 0) {
+                if (str_contains($sql, 'WHERE "id" = ?') && count($bindings) > 0) {
                     $id = $bindings[0];
                     foreach ($this->storage as $row) {
                         if ($row['id'] === $id) {
@@ -165,6 +165,12 @@ describe('Repository CRUD Operations', function (): void {
             {
                 return false;
             }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
+            }
         };
 
         $metadataFactory = new EntityMetadataFactory();
@@ -235,7 +241,7 @@ describe('Repository CRUD Operations', function (): void {
                 array $bindings = [],
             ): array {
                 // Simulate findBy with isAvailable criteria
-                if (str_contains($sql, 'is_available = ?')) {
+                if (str_contains($sql, '"is_available" = ?')) {
                     $searchValue = $bindings[0];
 
                     return array_values(array_filter(
@@ -273,6 +279,12 @@ describe('Repository CRUD Operations', function (): void {
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
         };
 
@@ -333,6 +345,12 @@ describe('Repository CRUD Operations', function (): void {
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
         };
 
@@ -395,6 +413,12 @@ describe('Repository CRUD Operations', function (): void {
             {
                 return false;
             }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
+            }
         };
 
         $metadataFactory = new EntityMetadataFactory();
@@ -428,7 +452,7 @@ describe('Repository CRUD Operations', function (): void {
                 string $sql,
                 array $bindings = [],
             ): array {
-                if (str_contains($sql, 'WHERE id = ?')) {
+                if (str_contains($sql, 'WHERE "id" = ?')) {
                     $id = $bindings[0];
 
                     return isset($this->storage[$id]) ? [$this->storage[$id]] : [];
@@ -463,6 +487,12 @@ describe('Repository CRUD Operations', function (): void {
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
         };
 

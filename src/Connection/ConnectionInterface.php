@@ -69,4 +69,20 @@ interface ConnectionInterface
      * Like driverName(), it must not require a live database connection.
      */
     public function supportsReturning(): bool;
+
+    /**
+     * Quote a table or column name for this connection's SQL dialect.
+     *
+     * Wraps the name in the driver's identifier delimiter (a backtick for MySQL and MariaDB, a double quote for
+     * PostgreSQL) and doubles any delimiter inside it, so reserved words (`key`, `group`, `order`), mixed case
+     * and unusual characters are all safe. A `table.column` name has each part quoted. The repository, data
+     * migrations and the test helper quote every name they interpolate through it. Like driverName(), it must
+     * not require a live database connection.
+     *
+     * @param string $identifier The table or column name, optionally `table.column`
+     * @return string The quoted identifier
+     */
+    public function quoteIdentifier(
+        string $identifier,
+    ): string;
 }

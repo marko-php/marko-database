@@ -135,6 +135,12 @@ class FactoryInsertConnection implements ConnectionInterface
     {
         return true;
     }
+
+    public function quoteIdentifier(
+        string $identifier,
+    ): string {
+        return '"' . str_replace('"', '""', $identifier) . '"';
+    }
 }
 
 /**
@@ -241,7 +247,7 @@ describe('EntityFactory', function (): void {
         expect($post->id)->toBe(1)
             ->and($post->status)->toBe('live')
             ->and($connection->executed)->toHaveCount(1)
-            ->and($connection->executed[0])->toContain('INSERT INTO factory_posts');
+            ->and($connection->executed[0])->toContain('INSERT INTO "factory_posts"');
         $events->assertDispatched(EntityCreating::class);
         $events->assertDispatched(EntityCreated::class);
     });

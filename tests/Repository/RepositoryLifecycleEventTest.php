@@ -98,6 +98,12 @@ function makeInsertConnection(): ConnectionInterface
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -157,6 +163,12 @@ function makeUpdateConnection(): ConnectionInterface
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -215,6 +227,12 @@ function makeDeleteConnection(): ConnectionInterface
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 }

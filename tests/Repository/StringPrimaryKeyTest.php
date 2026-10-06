@@ -157,6 +157,12 @@ function makeStringPkConnection(array $queryResults = [], array &$executedSql = 
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -472,7 +478,7 @@ it('saves a new entity with a string primary key', function (): void {
     $repository->save($product);
 
     expect($sql)->toHaveCount(1)
-        ->and($sql[0])->toContain('INSERT INTO products')
+        ->and($sql[0])->toContain('INSERT INTO "products"')
         ->and($bindings[0])->toContain('new-uuid-001')
         ->and($bindings[0])->toContain('Gadget');
 });
@@ -493,8 +499,8 @@ it('updates an existing entity with a string primary key via dirty tracking', fu
     $repository->save($product);
 
     expect($sql)->toHaveCount(1)
-        ->and($sql[0])->toContain('UPDATE products')
-        ->and($sql[0])->toContain('WHERE uuid = ?')
+        ->and($sql[0])->toContain('UPDATE "products"')
+        ->and($sql[0])->toContain('WHERE "uuid" = ?')
         ->and($bindings[0])->toContain($uuid);
 });
 
@@ -513,7 +519,7 @@ it('deletes an entity with a string primary key', function (): void {
     $repository->delete($product);
 
     expect($sql)->toHaveCount(1)
-        ->and($sql[0])->toContain('DELETE FROM products')
+        ->and($sql[0])->toContain('DELETE FROM "products"')
         ->and($bindings[0])->toContain($uuid);
 });
 

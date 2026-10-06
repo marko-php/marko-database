@@ -5,6 +5,96 @@ declare(strict_types=1);
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Migration\DataMigration;
 use Marko\Database\Migration\Migration;
+use PHPUnit\Framework\MockObject\MockObject;
+
+/**
+ * A mock connection that quotes identifiers with ANSI double quotes, as a real driver quotes them.
+ */
+function dataMigrationTestConnection(): ConnectionInterface&MockObject
+{
+    $connection = test()->createMock(ConnectionInterface::class);
+    $connection->method('quoteIdentifier')->willReturnCallback(
+        fn (string $identifier): string => '"' . str_replace('"', '""', $identifier) . '"',
+    );
+
+    return $connection;
+}
+
+/**
+ * A data migration exposing the protected insert/update/delete helpers.
+ */
+function dataMigrationHelpers(): DataMigration
+{
+    return new class () extends DataMigration
+    {
+        public function up(ConnectionInterface $connection): void {}
+
+        public function down(ConnectionInterface $connection): void {}
+
+        public function callInsert(
+            ConnectionInterface $connection,
+            string $table,
+            array $data,
+        ): int {
+            return $this->insert($connection, $table, $data);
+        }
+
+        public function callUpdate(
+            ConnectionInterface $connection,
+            string $table,
+            array $data,
+            array $where,
+        ): int {
+            return $this->update($connection, $table, $data, $where);
+        }
+
+        public function callDelete(
+            ConnectionInterface $connection,
+            string $table,
+            array $where,
+        ): int {
+            return $this->delete($connection, $table, $where);
+        }
+    };
+}
+
+describe('DataMigration identifier quoting', function (): void {
+    beforeEach(function (): void {
+        $this->statements = [];
+        $this->connection = dataMigrationTestConnection();
+        $this->connection->method('execute')->willReturnCallback(function (string $sql): int {
+            $this->statements[] = $sql;
+
+            return 1;
+        });
+    });
+
+    it('quotes the table and columns in DataMigration insert', function (): void {
+        dataMigrationHelpers()->callInsert($this->connection, 'settings', [
+            ['key' => 'a', 'group' => 'g'],
+            ['key' => 'b', 'group' => 'g'],
+        ]);
+
+        expect($this->statements)->toBe(['INSERT INTO "settings" ("key", "group") VALUES (?, ?), (?, ?)']);
+    });
+
+    it('quotes SET and WHERE columns in DataMigration update', function (): void {
+        dataMigrationHelpers()->callUpdate(
+            $this->connection,
+            'settings',
+            ['order' => 2],
+            ['key' => 'a', 'group' => 'g'],
+        );
+
+        expect($this->statements)->toBe(['UPDATE "settings" SET "order" = ? WHERE "key" = ? AND "group" = ?']);
+    });
+
+    it('quotes the table and WHERE columns in DataMigration delete', function (): void {
+        dataMigrationHelpers()->callDelete($this->connection, 'settings', ['key' => 'a']);
+
+        expect($this->statements)->toBe(['DELETE FROM "settings" WHERE "key" = ?']);
+    });
+});
 
 describe('DataMigration', function (): void {
     it('creates DataMigration base class extending Migration', function (): void {
@@ -23,7 +113,7 @@ describe('DataMigration', function (): void {
     it('supports raw SQL via execute() with nowdoc syntax', function (): void {
         $executedStatements = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = dataMigrationTestConnection();
         $connection->method('execute')
             ->willReturnCallback(function (string $sql) use (&$executedStatements): int {
                 $executedStatements[] = $sql;
@@ -67,7 +157,7 @@ describe('DataMigration', function (): void {
         $executedStatements = [];
         $executedBindings = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = dataMigrationTestConnection();
         $connection->method('execute')
             ->willReturnCallback(
                 function (string $sql, array $bindings = []) use (&$executedStatements, &$executedBindings): int {
@@ -106,7 +196,7 @@ describe('DataMigration', function (): void {
         $executedStatements = [];
         $executedBindings = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = dataMigrationTestConnection();
         $connection->method('execute')
             ->willReturnCallback(
                 function (string $sql, array $bindings = []) use (&$executedStatements, &$executedBindings): int {
@@ -151,7 +241,7 @@ describe('DataMigration', function (): void {
         $executedStatements = [];
         $executedBindings = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = dataMigrationTestConnection();
         $connection->method('execute')
             ->willReturnCallback(
                 function (string $sql, array $bindings = []) use (&$executedStatements, &$executedBindings): int {
@@ -193,7 +283,7 @@ describe('DataMigration', function (): void {
         $executedStatements = [];
         $executedBindings = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = dataMigrationTestConnection();
         $connection->method('execute')
             ->willReturnCallback(
                 function (string $sql, array $bindings = []) use (&$executedStatements, &$executedBindings): int {
@@ -228,7 +318,7 @@ describe('DataMigration', function (): void {
     it('supports down() for rollback', function (): void {
         $downCalled = false;
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = dataMigrationTestConnection();
         $connection->method('execute')->willReturn(1);
 
         $dataMigration = new class ($downCalled) extends DataMigration

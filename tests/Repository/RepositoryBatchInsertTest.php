@@ -167,6 +167,12 @@ function makeBatchSpyConnection(
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -234,6 +240,12 @@ function makeBatchTransactionConnection(
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
 
         public function beginTransaction(): void
@@ -323,7 +335,7 @@ it('inserts multiple entities in a single multi-row INSERT statement', function 
 
     $insertStatements = array_values(array_filter($sqlLog, fn ($e) => str_contains($e['sql'], 'INSERT')));
     expect($insertStatements)->toHaveCount(1)
-        ->and($insertStatements[0]['sql'])->toContain('INSERT INTO batch_users')
+        ->and($insertStatements[0]['sql'])->toContain('INSERT INTO "batch_users"')
         ->and(substr_count($insertStatements[0]['sql'], '(?, ?)') >= 3)->toBeTrue();
 });
 
@@ -588,7 +600,7 @@ it('handles string primary keys in the batch correctly', function (): void {
 
     $insertStmts = array_values(array_filter($sqlLog, fn ($e) => str_contains($e['sql'], 'INSERT')));
     expect($insertStmts)->toHaveCount(1)
-        ->and($insertStmts[0]['sql'])->toContain('INSERT INTO batch_string_pk')
+        ->and($insertStmts[0]['sql'])->toContain('INSERT INTO "batch_string_pk"')
         ->and($insertStmts[0]['bindings'])->toContain('uuid-aaa')
         ->and($insertStmts[0]['bindings'])->toContain('uuid-bbb')
         ->and($insertStmts[0]['bindings'])->toContain('First')
@@ -665,6 +677,12 @@ function makePgsqlSpyConnection(
         {
             return true;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -733,6 +751,12 @@ function makePgsqlTransactionConnection(
         public function supportsReturning(): bool
         {
             return true;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
 
         public function beginTransaction(): void
@@ -869,8 +893,8 @@ it(
         expect($insertStatements)->not->toBeEmpty();
         $insertSql = $insertStatements[0]['sql'];
         expect($insertSql)
-            ->toContain('INSERT INTO batch_users')
-            ->toContain('RETURNING id');
+            ->toContain('INSERT INTO "batch_users"')
+            ->toContain('RETURNING "id"');
     },
 );
 
@@ -895,7 +919,7 @@ it(
         expect($insertStatements)->not->toBeEmpty();
         $insertSql = $insertStatements[0]['sql'];
         expect($insertSql)
-            ->toContain('INSERT INTO batch_users')
+            ->toContain('INSERT INTO "batch_users"')
             ->not->toContain('RETURNING');
     },
 );
@@ -1028,6 +1052,9 @@ function makeReturningStubConnection(
     $connection = test()->createStub(ConnectionInterface::class);
     $connection->method('driverName')->willReturn($driverName);
     $connection->method('supportsReturning')->willReturn(true);
+    $connection->method('quoteIdentifier')->willReturnCallback(
+        fn (string $identifier): string => '"' . str_replace('"', '""', $identifier) . '"',
+    );
     $connection->method('query')->willReturnCallback(
         function (string $sql, array $bindings = []) use ($returningRows, &$queries): array {
             $queries[] = ['sql' => $sql, 'bindings' => $bindings];
@@ -1056,7 +1083,9 @@ describe('database-generated keys in a batch', function (): void {
 
         $repository->insertBatch([$first, $second]);
 
-        expect($sqlLog[0]['sql'])->toBe('INSERT INTO batch_generated_tokens (label) VALUES (?), (?) RETURNING id')
+        expect($sqlLog[0]['sql'])->toBe(
+            'INSERT INTO "batch_generated_tokens" ("label") VALUES (?), (?) RETURNING "id"',
+        )
             ->and($sqlLog[0]['bindings'])->toBe(['first', 'second'])
             ->and($first->id)->toBe('a0e1c0de-0000-4000-8000-000000000001')
             ->and($second->id)->toBe('a0e1c0de-0000-4000-8000-000000000002');
@@ -1075,7 +1104,7 @@ describe('database-generated keys in a batch', function (): void {
 
             $repository->insertBatch([$alice, $bob]);
 
-            expect($queries[0]['sql'])->toEndWith('RETURNING id')
+            expect($queries[0]['sql'])->toEndWith('RETURNING "id"')
                 ->and($alice->id)->toBe(11)
                 ->and($bob->id)->toBe(12);
         },

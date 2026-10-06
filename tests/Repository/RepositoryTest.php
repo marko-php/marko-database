@@ -466,6 +466,12 @@ it('inserts new entity with save() when no ID', function (): void {
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -553,6 +559,12 @@ it('updates existing entity with save() when has ID', function (): void {
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -638,6 +650,12 @@ it('only updates dirty fields on existing entity', function (): void {
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -709,6 +727,12 @@ it('sets auto-generated ID on entity after insert', function (): void {
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 
@@ -795,6 +819,12 @@ it('deletes entity with delete()', function (): void {
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 
@@ -898,6 +928,12 @@ it('supports count() method returning total count', function (): void {
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 
     $metadataFactory = new EntityMetadataFactory();
@@ -966,6 +1002,12 @@ it('supports exists(id) method returning boolean', function (): void {
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 
@@ -1158,6 +1200,12 @@ function createMockConnection(
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 }
@@ -1498,7 +1546,7 @@ function createStorageConnection(
             string $sql,
             array $bindings = [],
         ): array {
-            if (str_contains($sql, 'WHERE id = ?') && count($bindings) > 0) {
+            if (str_contains($sql, 'WHERE "id" = ?') && count($bindings) > 0) {
                 $id = $bindings[0];
 
                 return isset($this->storage[$id]) ? [$this->storage[$id]] : [];
@@ -1513,7 +1561,7 @@ function createStorageConnection(
         ): int {
             $this->sqlLog[] = ['sql' => $sql, 'bindings' => $bindings];
 
-            if (str_starts_with($sql, 'INSERT INTO users')) {
+            if (str_starts_with($sql, 'INSERT INTO "users"')) {
                 $id = $this->nextId++;
                 $this->storage[$id] = [
                     'id' => $id,
@@ -1524,7 +1572,10 @@ function createStorageConnection(
 
                 // Map positional bindings to columns parsed from SQL
                 preg_match('/\(([^)]+)\)\s+VALUES/', $sql, $matches);
-                $columns = array_map('trim', explode(',', $matches[1] ?? ''));
+                $columns = array_map(
+                    fn (string $column): string => trim($column, ' "'),
+                    explode(',', $matches[1] ?? ''),
+                );
                 foreach ($columns as $i => $col) {
                     $this->storage[$id][$col] = $bindings[$i] ?? null;
                 }
@@ -1532,8 +1583,7 @@ function createStorageConnection(
                 return 1;
             }
 
-            if (str_starts_with($sql, 'UPDATE users')) {
-                preg_match('/WHERE id = \?$/', $sql, $m);
+            if (str_starts_with($sql, 'UPDATE "users"')) {
                 $id = end($bindings);
 
                 if (!isset($this->storage[$id])) {
@@ -1546,7 +1596,7 @@ function createStorageConnection(
                 $updateBindings = array_slice($bindings, 0, count($setPairs));
 
                 foreach ($setPairs as $i => $pair) {
-                    preg_match('/^(\S+)\s*=\s*\?$/', $pair, $colMatch);
+                    preg_match('/^"([^"]+)"\s*=\s*\?$/', $pair, $colMatch);
                     $col = $colMatch[1] ?? null;
 
                     if ($col !== null) {
@@ -1579,6 +1629,12 @@ function createStorageConnection(
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 }
@@ -1643,6 +1699,12 @@ function createSpyConnection(array &$sqlLog, array $queryResults = []): Connecti
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -1679,8 +1741,8 @@ it('it no longer falls back to the literal \'id\' column name in Repository::fin
 
     $repository->find(5);
 
-    expect($sqlLog[0]['sql'])->toContain('order_uuid = ?')
-        ->and($sqlLog[0]['sql'])->not->toContain('WHERE id = ?');
+    expect($sqlLog[0]['sql'])->toContain('"order_uuid" = ?')
+        ->and($sqlLog[0]['sql'])->not->toContain('WHERE "id" = ?');
 });
 
 it('it no longer falls back to the literal \'id\' column name in Repository::save update path', function (): void {
@@ -1695,8 +1757,8 @@ it('it no longer falls back to the literal \'id\' column name in Repository::sav
     $repository->save($entity);
 
     $updateSql = array_values(array_filter($sqlLog, fn ($entry) => str_starts_with($entry['sql'], 'UPDATE')));
-    expect($updateSql[0]['sql'])->toContain('WHERE order_uuid = ?')
-        ->and($updateSql[0]['sql'])->not->toContain('WHERE id = ?');
+    expect($updateSql[0]['sql'])->toContain('WHERE "order_uuid" = ?')
+        ->and($updateSql[0]['sql'])->not->toContain('WHERE "id" = ?');
 });
 
 it('it no longer falls back to the literal \'id\' column name in Repository::delete', function (): void {
@@ -1710,8 +1772,8 @@ it('it no longer falls back to the literal \'id\' column name in Repository::del
     $repository->delete($entity);
 
     $deleteSql = array_values(array_filter($sqlLog, fn ($entry) => str_starts_with($entry['sql'], 'DELETE')));
-    expect($deleteSql[0]['sql'])->toContain('WHERE order_uuid = ?')
-        ->and($deleteSql[0]['sql'])->not->toContain('WHERE order_id = ?');
+    expect($deleteSql[0]['sql'])->toContain('WHERE "order_uuid" = ?')
+        ->and($deleteSql[0]['sql'])->not->toContain('WHERE "order_id" = ?');
 });
 
 it(
@@ -1723,8 +1785,8 @@ it(
 
         $repository->exposeIsColumnUnique('status', 'shipped', 42);
 
-        expect($sqlLog[0]['sql'])->toContain('AND order_uuid != ?')
-            ->and($sqlLog[0]['sql'])->not->toContain('AND status != ?');
+        expect($sqlLog[0]['sql'])->toContain('AND "order_uuid" != ?')
+            ->and($sqlLog[0]['sql'])->not->toContain('AND "status" != ?');
     },
 );
 
@@ -1800,6 +1862,12 @@ it('Repository::count() delegates to the builder without duplicating logic', fun
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 
@@ -1887,6 +1955,12 @@ describe('companion insert and update', function (): void {
             {
                 return false;
             }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
+            }
         };
     }
 
@@ -1903,7 +1977,7 @@ describe('companion insert and update', function (): void {
         $repository->save($account);
 
         expect($sqlLog)->toHaveCount(1)
-            ->and($sqlLog[0]['sql'])->toContain('INSERT INTO accounts')
+            ->and($sqlLog[0]['sql'])->toContain('INSERT INTO "accounts"')
             ->and($sqlLog[0]['sql'])->toContain('username')
             ->and($sqlLog[0]['sql'])->not->toContain('bio')
             ->and($sqlLog[0]['sql'])->not->toContain('website');
@@ -1929,7 +2003,7 @@ describe('companion insert and update', function (): void {
             $repository->save($account);
 
             expect($sqlLog)->toHaveCount(1)
-                ->and($sqlLog[0]['sql'])->toContain('INSERT INTO accounts')
+                ->and($sqlLog[0]['sql'])->toContain('INSERT INTO "accounts"')
                 ->and($sqlLog[0]['sql'])->toContain('username')
                 ->and($sqlLog[0]['sql'])->toContain('bio')
                 ->and($sqlLog[0]['sql'])->toContain('website');
@@ -1958,7 +2032,7 @@ describe('companion insert and update', function (): void {
         $repository->save($account);
 
         expect($sqlLog)->toHaveCount(1)
-            ->and($sqlLog[0]['sql'])->toContain('INSERT INTO accounts')
+            ->and($sqlLog[0]['sql'])->toContain('INSERT INTO "accounts"')
             ->and($sqlLog[0]['sql'])->toContain('username')
             ->and($sqlLog[0]['sql'])->toContain('bio')
             ->and($sqlLog[0]['sql'])->toContain('website')
@@ -2036,7 +2110,7 @@ describe('companion insert and update', function (): void {
         $repository->save($account);
 
         expect($sqlLog)->toHaveCount(1)
-            ->and($sqlLog[0]['sql'])->toContain('UPDATE accounts')
+            ->and($sqlLog[0]['sql'])->toContain('UPDATE "accounts"')
             ->and($sqlLog[0]['sql'])->toContain('username')
             ->and($sqlLog[0]['sql'])->not->toContain('bio')
             ->and($sqlLog[0]['sql'])->not->toContain('website');
@@ -2065,7 +2139,7 @@ describe('companion insert and update', function (): void {
         $repository->save($account);
 
         expect($sqlLog)->toHaveCount(1)
-            ->and($sqlLog[0]['sql'])->toContain('UPDATE accounts')
+            ->and($sqlLog[0]['sql'])->toContain('UPDATE "accounts"')
             ->and($sqlLog[0]['sql'])->toContain('username')
             ->and($sqlLog[0]['sql'])->toContain('bio');
     });
@@ -2093,7 +2167,7 @@ describe('companion insert and update', function (): void {
         $repository->save($account);
 
         expect($sqlLog)->toHaveCount(1)
-            ->and($sqlLog[0]['sql'])->toContain('UPDATE accounts')
+            ->and($sqlLog[0]['sql'])->toContain('UPDATE "accounts"')
             ->and($sqlLog[0]['sql'])->not->toContain('bio')
             ->and($sqlLog[0]['sql'])->not->toContain('website');
     });
@@ -2128,7 +2202,7 @@ describe('companion insert and update', function (): void {
 
         // Should only update the parent field; companion has no originalValues → skipped
         expect($sqlLog)->toHaveCount(1)
-            ->and($sqlLog[0]['sql'])->toContain('UPDATE accounts')
+            ->and($sqlLog[0]['sql'])->toContain('UPDATE "accounts"')
             ->and($sqlLog[0]['sql'])->toContain('username')
             ->and($sqlLog[0]['sql'])->not->toContain('bio');
     });
@@ -2156,7 +2230,7 @@ describe('companion insert and update', function (): void {
         $repository->save($account);
 
         expect($sqlLog)->toHaveCount(1)
-            ->and($sqlLog[0]['sql'])->toContain('WHERE id = ?')
+            ->and($sqlLog[0]['sql'])->toContain('WHERE "id" = ?')
             ->and($sqlLog[0]['bindings'])->toContain(42);
     });
 
@@ -2355,6 +2429,12 @@ function createReturningSpyConnection(
         {
             return $this->supportsReturning;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -2380,7 +2460,7 @@ describe('database-generated primary keys', function (): void {
 
         expect($this->sqlLog)->toBe([[
             'type' => 'query',
-            'sql' => 'INSERT INTO generated_tokens (name) VALUES (?) RETURNING id',
+            'sql' => 'INSERT INTO "generated_tokens" ("name") VALUES (?) RETURNING "id"',
             'bindings' => ['api'],
         ]])
             ->and($token->id)->toBe($this->uuid);
@@ -2399,7 +2479,7 @@ describe('database-generated primary keys', function (): void {
 
         $repository->save($token);
 
-        expect($this->sqlLog[0]['sql'])->toBe('INSERT INTO generated_tokens (name) VALUES (?) RETURNING id')
+        expect($this->sqlLog[0]['sql'])->toBe('INSERT INTO "generated_tokens" ("name") VALUES (?) RETURNING "id"')
             ->and($token->id)->toBe($this->uuid);
     });
 
@@ -2418,7 +2498,7 @@ describe('database-generated primary keys', function (): void {
 
         expect($this->sqlLog)->toBe([[
             'type' => 'execute',
-            'sql' => 'INSERT INTO generated_tokens (id, name) VALUES (?, ?)',
+            'sql' => 'INSERT INTO "generated_tokens" ("id", "name") VALUES (?, ?)',
             'bindings' => [$this->uuid, 'api'],
         ]])
             ->and($token->id)->toBe($this->uuid);
@@ -2482,7 +2562,7 @@ describe('database-generated primary keys', function (): void {
 
         expect($this->sqlLog[1])->toBe([
             'type' => 'execute',
-            'sql' => 'UPDATE generated_tokens SET name = ? WHERE id = ?',
+            'sql' => 'UPDATE "generated_tokens" SET "name" = ? WHERE "id" = ?',
             'bindings' => ['web', $this->uuid],
         ]);
     });

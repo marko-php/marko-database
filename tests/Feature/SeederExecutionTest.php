@@ -75,6 +75,12 @@ function createTrackingConnection(
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -144,6 +150,12 @@ function createOrderTrackingConnection(
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -210,6 +222,12 @@ function createRunTrackingConnection(
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 }

@@ -103,6 +103,12 @@ function makeExistsConnection(array $rows, array &$log): ConnectionInterface
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -189,7 +195,7 @@ describe('Repository exists family', function (): void {
         $repository->isEmailUnique('alice@example.com', 5);
 
         expect($log)->toHaveCount(1)
-            ->and($log[0]['sql'])->toContain('id != ?')
+            ->and($log[0]['sql'])->toContain('"id" != ?')
             ->and($log[0]['bindings'])->toBe(['alice@example.com', 5]);
     });
 

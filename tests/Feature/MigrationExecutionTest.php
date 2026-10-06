@@ -111,6 +111,12 @@ PHP;
             {
                 return false;
             }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
+            }
         };
 
         // Mock repository
@@ -229,6 +235,12 @@ PHP;
             {
                 return false;
             }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
+            }
         };
 
         $repository = $this->createMock(MigrationRepository::class);
@@ -317,6 +329,12 @@ PHP;
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
         };
 
@@ -457,6 +475,12 @@ PHP;
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
         };
 

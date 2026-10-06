@@ -132,8 +132,8 @@ class DatabaseTestHelper
 
             $sql = sprintf(
                 'INSERT INTO %s (%s) VALUES (%s)',
-                $tableName,
-                implode(', ', $columns),
+                $this->connection->quoteIdentifier($tableName),
+                implode(', ', array_map($this->connection->quoteIdentifier(...), $columns)),
                 implode(', ', $placeholders),
             );
 
@@ -149,7 +149,7 @@ class DatabaseTestHelper
     public function truncateTable(
         string $tableName,
     ): void {
-        $this->connection->execute("DELETE FROM $tableName");
+        $this->connection->execute('DELETE FROM ' . $this->connection->quoteIdentifier($tableName));
     }
 
     /**
@@ -161,7 +161,9 @@ class DatabaseTestHelper
     public function getTableRowCount(
         string $tableName,
     ): int {
-        $result = $this->connection->query("SELECT COUNT(*) as count FROM $tableName");
+        $result = $this->connection->query(
+            'SELECT COUNT(*) as count FROM ' . $this->connection->quoteIdentifier($tableName),
+        );
 
         return (int) ($result[0]['count'] ?? 0);
     }

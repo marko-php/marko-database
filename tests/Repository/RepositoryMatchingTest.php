@@ -356,6 +356,12 @@ function makeRepository(QueryBuilderInterface $stubBuilder): ProductRepository
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 
     $factory = new readonly class ($stubBuilder) implements QueryBuilderFactoryInterface
@@ -516,6 +522,12 @@ describe('Repository matching()', function (): void {
             public function supportsReturning(): bool
             {
                 return false;
+            }
+
+            public function quoteIdentifier(
+                string $identifier,
+            ): string {
+                return '"' . str_replace('"', '""', $identifier) . '"';
             }
         };
 

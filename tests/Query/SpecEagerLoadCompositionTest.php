@@ -676,6 +676,12 @@ function makeSpecConnection(array $rows = []): ConnectionInterface
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 

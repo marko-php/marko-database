@@ -115,6 +115,12 @@ function makeFobConnection(array $rows = []): ConnectionInterface
         {
             return false;
         }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
+        }
     };
 }
 
@@ -177,6 +183,12 @@ function makeFobRecordingConnection(array $rows, array &$queries): ConnectionInt
         public function supportsReturning(): bool
         {
             return false;
+        }
+
+        public function quoteIdentifier(
+            string $identifier,
+        ): string {
+            return '"' . str_replace('"', '""', $identifier) . '"';
         }
     };
 }
@@ -520,7 +532,7 @@ describe('findOneBy LIMIT 1', function (): void {
         // 'status' maps to column 'status'; verify the WHERE clause uses the column name
         $repo->findOneBy(['status' => 'pending']);
 
-        expect($queries[0]['sql'])->toContain('status = ?')
+        expect($queries[0]['sql'])->toContain('"status" = ?')
             ->and($queries[0]['bindings'])->toBe(['pending']);
     });
 

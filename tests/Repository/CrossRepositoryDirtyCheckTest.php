@@ -103,6 +103,12 @@ class CrossRepoRecordingConnection implements ConnectionInterface
     {
         return false;
     }
+
+    public function quoteIdentifier(
+        string $identifier,
+    ): string {
+        return '"' . str_replace('"', '""', $identifier) . '"';
+    }
 }
 
 /**
@@ -152,7 +158,7 @@ describe('Cross-repository dirty checking', function (): void {
         $container->get(CrossRepoArticlePublisherRepository::class)->save($article);
 
         expect($connection->executed)->toHaveCount(1)
-            ->and($connection->executed[0]['sql'])->toBe('UPDATE cross_repo_articles SET title = ? WHERE id = ?')
+            ->and($connection->executed[0]['sql'])->toBe('UPDATE "cross_repo_articles" SET "title" = ? WHERE "id" = ?')
             ->and($connection->executed[0]['bindings'])->toBe(['Published title', 7]);
     });
 });

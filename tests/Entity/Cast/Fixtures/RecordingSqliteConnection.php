@@ -79,6 +79,12 @@ class RecordingSqliteConnection implements ConnectionInterface
         return false;
     }
 
+    public function quoteIdentifier(
+        string $identifier,
+    ): string {
+        return '"' . str_replace('"', '""', $identifier) . '"';
+    }
+
     /**
      * Run raw DDL (CREATE TABLE) without recording it.
      */
@@ -127,11 +133,15 @@ class RecordingSqliteConnection implements ConnectionInterface
 
         if ($verb === 'INSERT') {
             preg_match('/\(([^)]*)\) VALUES/', $entry['sql'], $found);
-            $columns = array_map('trim', explode(',', $found[1]));
+            // Column names arrive quoted ("price"); the map is keyed by the bare name
+            $columns = array_map(
+                fn (string $column): string => trim($column, ' "'),
+                explode(',', $found[1]),
+            );
         } else {
             preg_match('/SET (.*) WHERE/', $entry['sql'], $found);
             $columns = array_map(
-                fn (string $clause): string => trim(explode('=', $clause)[0]),
+                fn (string $clause): string => trim(explode('=', $clause)[0], ' "'),
                 explode(',', $found[1]),
             );
         }

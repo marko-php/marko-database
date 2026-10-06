@@ -12,6 +12,9 @@ use Marko\Database\Connection\ConnectionInterface;
  * Data migrations insert, update, or delete required module data.
  * Unlike seeders, data migrations run in production and are tracked
  * alongside schema migrations.
+ *
+ * The insert(), update() and delete() helpers quote every table and column name through
+ * ConnectionInterface::quoteIdentifier(), so reserved words such as `key` or `group` are safe.
  */
 abstract class DataMigration extends Migration
 {
@@ -37,7 +40,7 @@ abstract class DataMigration extends Migration
 
         /** @var array<array<string, mixed>> $data */
         $columns = array_keys($data[0]);
-        $columnList = implode(', ', $columns);
+        $columnList = implode(', ', array_map($connection->quoteIdentifier(...), $columns));
 
         $placeholders = [];
         $bindings = [];
@@ -53,7 +56,7 @@ abstract class DataMigration extends Migration
 
         $sql = sprintf(
             'INSERT INTO %s (%s) VALUES %s',
-            $table,
+            $connection->quoteIdentifier($table),
             $columnList,
             implode(', ', $placeholders),
         );
@@ -80,20 +83,20 @@ abstract class DataMigration extends Migration
         $bindings = [];
 
         foreach ($data as $column => $value) {
-            $setClauses[] = $column . ' = ?';
+            $setClauses[] = $connection->quoteIdentifier($column) . ' = ?';
             $bindings[] = $value;
         }
 
         $whereClauses = [];
 
         foreach ($where as $column => $value) {
-            $whereClauses[] = $column . ' = ?';
+            $whereClauses[] = $connection->quoteIdentifier($column) . ' = ?';
             $bindings[] = $value;
         }
 
         $sql = sprintf(
             'UPDATE %s SET %s WHERE %s',
-            $table,
+            $connection->quoteIdentifier($table),
             implode(', ', $setClauses),
             implode(' AND ', $whereClauses),
         );
@@ -118,13 +121,13 @@ abstract class DataMigration extends Migration
         $bindings = [];
 
         foreach ($where as $column => $value) {
-            $whereClauses[] = $column . ' = ?';
+            $whereClauses[] = $connection->quoteIdentifier($column) . ' = ?';
             $bindings[] = $value;
         }
 
         $sql = sprintf(
             'DELETE FROM %s WHERE %s',
-            $table,
+            $connection->quoteIdentifier($table),
             implode(' AND ', $whereClauses),
         );
 

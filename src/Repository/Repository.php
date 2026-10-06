@@ -127,8 +127,8 @@ abstract class Repository implements RepositoryInterface
 
         $sql = sprintf(
             'SELECT * FROM %s WHERE %s = ?',
-            $this->metadata->tableName,
-            $columnName,
+            $this->quote($this->metadata->tableName),
+            $this->quote($columnName),
         );
 
         $rows = $this->connection->query($sql, [$id]);
@@ -173,7 +173,7 @@ abstract class Repository implements RepositoryInterface
      */
     public function findAll(): EntityCollection
     {
-        $sql = sprintf('SELECT * FROM %s', $this->metadata->tableName);
+        $sql = sprintf('SELECT * FROM %s', $this->quote($this->metadata->tableName));
         $rows = $this->connection->query($sql);
 
         $entities = array_map(
@@ -207,13 +207,13 @@ abstract class Repository implements RepositoryInterface
 
         foreach ($criteria as $property => $value) {
             $column = $propertyToColumn[$property] ?? $property;
-            $conditions[] = "$column = ?";
+            $conditions[] = $this->quote($column) . ' = ?';
             $bindings[] = $this->criteriaValue($property, $value);
         }
 
         $sql = sprintf(
             'SELECT * FROM %s WHERE %s',
-            $this->metadata->tableName,
+            $this->quote($this->metadata->tableName),
             implode(' AND ', $conditions),
         );
 
@@ -253,13 +253,13 @@ abstract class Repository implements RepositoryInterface
 
         foreach ($criteria as $property => $value) {
             $column = $propertyToColumn[$property] ?? $property;
-            $conditions[] = "$column = ?";
+            $conditions[] = $this->quote($column) . ' = ?';
             $bindings[] = $this->criteriaValue($property, $value);
         }
 
         $sql = sprintf(
             'SELECT * FROM %s WHERE %s LIMIT 1',
-            $this->metadata->tableName,
+            $this->quote($this->metadata->tableName),
             implode(' AND ', $conditions),
         );
 
@@ -337,8 +337,8 @@ abstract class Repository implements RepositoryInterface
 
         $sql = sprintf(
             'INSERT INTO %s (%s) VALUES %s',
-            $this->metadata->tableName,
-            implode(', ', $columns),
+            $this->quote($this->metadata->tableName),
+            implode(', ', array_map($this->quote(...), $columns)),
             $placeholders,
         );
 
@@ -363,7 +363,7 @@ abstract class Repository implements RepositoryInterface
                 // so the MySQL offset-arithmetic strategy would produce shifted ids,
                 // and a generated key has no lastInsertId() at all.
                 $pkColumn = $pkProperty->columnName;
-                $returningRows = $this->connection->query("$sql RETURNING $pkColumn", $bindings);
+                $returningRows = $this->connection->query("$sql RETURNING " . $this->quote($pkColumn), $bindings);
 
                 $actualCount = count($returningRows);
                 $expectedCount = count($entities);
@@ -674,8 +674,8 @@ abstract class Repository implements RepositoryInterface
 
         $sql = sprintf(
             'DELETE FROM %s WHERE %s = ?',
-            $this->metadata->tableName,
-            $columnName,
+            $this->quote($this->metadata->tableName),
+            $this->quote($columnName),
         );
 
         $this->eventDispatcher?->dispatch(new EntityDeleting($entity, static::ENTITY_CLASS));
@@ -765,7 +765,7 @@ abstract class Repository implements RepositoryInterface
 
         $sql = sprintf(
             'SELECT COUNT(*) as aggregate FROM %s',
-            $this->metadata->tableName,
+            $this->quote($this->metadata->tableName),
         );
 
         $result = $this->connection->query($sql);
@@ -786,8 +786,8 @@ abstract class Repository implements RepositoryInterface
 
         $sql = sprintf(
             'SELECT 1 FROM %s WHERE %s = ? LIMIT 1',
-            $this->metadata->tableName,
-            $columnName,
+            $this->quote($this->metadata->tableName),
+            $this->quote($columnName),
         );
 
         $rows = $this->connection->query($sql, [$id]);
@@ -814,19 +814,29 @@ abstract class Repository implements RepositoryInterface
 
         foreach ($criteria as $property => $value) {
             $column = $propertyToColumn[$property] ?? $property;
-            $conditions[] = "$column = ?";
+            $conditions[] = $this->quote($column) . ' = ?';
             $bindings[] = $this->criteriaValue($property, $value);
         }
 
         $sql = sprintf(
             'SELECT 1 FROM %s WHERE %s LIMIT 1',
-            $this->metadata->tableName,
+            $this->quote($this->metadata->tableName),
             implode(' AND ', $conditions),
         );
 
         $rows = $this->connection->query($sql, $bindings);
 
         return count($rows) > 0;
+    }
+
+    /**
+     * Quote a table or column name through the connection, so reserved words (`key`, `group`, `order`), mixed
+     * case and embedded delimiters are safe on every driver.
+     */
+    private function quote(
+        string $identifier,
+    ): string {
+        return $this->connection->quoteIdentifier($identifier);
     }
 
     /**
@@ -862,14 +872,14 @@ abstract class Repository implements RepositoryInterface
     ): bool {
         $sql = sprintf(
             'SELECT 1 FROM %s WHERE %s = ?',
-            $this->metadata->tableName,
-            $column,
+            $this->quote($this->metadata->tableName),
+            $this->quote($column),
         );
         $bindings = [$value];
 
         if ($excludeId !== null) {
             $pkColumn = $this->metadata->getPrimaryKeyProperty()->columnName;
-            $sql .= " AND $pkColumn != ?";
+            $sql .= ' AND ' . $this->quote($pkColumn) . ' != ?';
             $bindings[] = $excludeId;
         }
 
@@ -938,15 +948,15 @@ abstract class Repository implements RepositoryInterface
 
         $sql = sprintf(
             'INSERT INTO %s (%s) VALUES (%s)',
-            $this->metadata->tableName,
-            implode(', ', $columns),
+            $this->quote($this->metadata->tableName),
+            implode(', ', array_map($this->quote(...), $columns)),
             implode(', ', $placeholders),
         );
 
         if ($readsGeneratedKey && $pkProperty !== null) {
             // The database generated the key: read it back in the same statement.
             $pkColumn = $pkProperty->columnName;
-            $rows = $this->connection->query("$sql RETURNING $pkColumn", array_values($data));
+            $rows = $this->connection->query("$sql RETURNING " . $this->quote($pkColumn), array_values($data));
 
             if (count($rows) !== 1) {
                 throw RepositoryException::returningRowCountMismatch(
@@ -1063,15 +1073,15 @@ abstract class Repository implements RepositoryInterface
         $id = $pkProperty->getValue($entity);
 
         $setClauses = array_map(
-            fn (string $column): string => "$column = ?",
+            fn (string $column): string => $this->quote($column) . ' = ?',
             array_keys($data),
         );
 
         $sql = sprintf(
             'UPDATE %s SET %s WHERE %s = ?',
-            $this->metadata->tableName,
+            $this->quote($this->metadata->tableName),
             implode(', ', $setClauses),
-            $pkColumn,
+            $this->quote($pkColumn),
         );
 
         $bindings = array_values($data);
