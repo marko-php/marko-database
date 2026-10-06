@@ -26,7 +26,7 @@ describe('Migrator', function (): void {
     it('creates migrations table if not exists', function (): void {
         $tableCreated = false;
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
         $repository = $this->createMock(MigrationRepository::class);
         $repository->expects($this->once())
@@ -50,9 +50,9 @@ describe('Migrator', function (): void {
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_create_users_table.php', $migrationContent);
         file_put_contents($this->migrationsPath . '/2024_01_02_000000_create_posts_table.php', $migrationContent);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([]);
         $repository->method('getNextBatchNumber')->willReturn(1);
@@ -104,7 +104,7 @@ PHP;
         file_put_contents($this->migrationsPath . '/2024_01_02_000000_create_posts_table.php', $migration2Content);
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_create_users_table.php', $migration1Content);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')
             ->willReturnCallback(function (string $sql) use (&$appliedOrder): int {
                 $appliedOrder[] = $sql;
@@ -112,7 +112,7 @@ PHP;
                 return 1;
             });
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([]);
         $repository->method('getNextBatchNumber')->willReturn(1);
@@ -147,7 +147,7 @@ PHP;
 
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_test.php', $migrationContent);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')
             ->willReturnCallback(function (string $sql) use (&$upExecuted): int {
                 if ($sql === 'EXECUTED') {
@@ -157,7 +157,7 @@ PHP;
                 return 1;
             });
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([]);
         $repository->method('getNextBatchNumber')->willReturn(1);
@@ -174,9 +174,9 @@ PHP;
 
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_test.php', Helpers::getEmptyMigrationContent());
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([]);
         $repository->method('getNextBatchNumber')->willReturn(5);
@@ -198,9 +198,9 @@ PHP;
         $recordedBatches = [];
         Helpers::writeTestMigrationFiles($this->migrationsPath);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([]);
         $repository->method('getNextBatchNumber')->willReturn(2);
@@ -236,7 +236,7 @@ PHP;
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_first.php', $migrationContent);
         file_put_contents($this->migrationsPath . '/2024_01_02_000000_second.php', $migrationContent);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')
             ->willReturnCallback(function (string $sql) use (&$rolledBack): int {
                 if ($sql === 'ROLLBACK') {
@@ -246,7 +246,7 @@ PHP;
                 return 1;
             });
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getLastBatchMigrations')->willReturn([
             '2024_01_02_000000_second',
@@ -280,7 +280,7 @@ PHP;
 
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_test.php', $migrationContent);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')
             ->willReturnCallback(function (string $sql) use (&$downExecuted): int {
                 if ($sql === 'DOWN_EXECUTED') {
@@ -290,7 +290,7 @@ PHP;
                 return 1;
             });
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getLastBatchMigrations')->willReturn(['2024_01_01_000000_test']);
         $repository->method('delete');
@@ -306,9 +306,9 @@ PHP;
 
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_test.php', Helpers::getEmptyMigrationContent());
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getLastBatchMigrations')->willReturn(['2024_01_01_000000_test']);
         $repository->method('delete')
@@ -323,9 +323,9 @@ PHP;
     });
 
     it('returns list of applied migrations', function (): void {
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([
             '2024_01_01_000000_create_users_table',
@@ -344,9 +344,9 @@ PHP;
     it('returns list of pending migrations', function (): void {
         Helpers::writeTestMigrationFiles($this->migrationsPath);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([
             '2024_01_01_000000_first',
@@ -379,9 +379,9 @@ PHP;
 
         file_put_contents($this->migrationsPath . '/2024_01_01_000000_test.php', $migrationContent);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([]);
         $repository->method('getNextBatchNumber')->willReturn(1);
@@ -393,9 +393,9 @@ PHP;
     });
 
     it('throws MigrationException when migration file not found', function (): void {
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getLastBatchMigrations')->willReturn(['2024_01_01_000000_nonexistent']);
 
@@ -427,10 +427,10 @@ PHP;
         file_put_contents($this->migrationsPath . '/2024_01_02_000000_second.php', $migrationContent);
         file_put_contents($this->migrationsPath . '/2024_01_03_000000_third.php', $migrationContent);
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')->willReturn(1);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('createTable');
         $repository->method('getApplied')->willReturn([
             '2024_01_01_000000_first',

@@ -9,7 +9,7 @@ describe('Migration', function (): void {
     it('provides Migration base class with execute() helper', function (): void {
         $executedStatements = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')
             ->willReturnCallback(function (string $sql) use (&$executedStatements): int {
                 $executedStatements[] = $sql;
@@ -45,7 +45,7 @@ describe('Migration', function (): void {
     it('executes migration up() method', function (): void {
         $upCalled = false;
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
         $migration = new class ($upCalled) extends Migration
         {
@@ -71,7 +71,7 @@ describe('Migration', function (): void {
     it('executes migration down() method on rollback', function (): void {
         $downCalled = false;
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
         $migration = new class ($downCalled) extends Migration
         {

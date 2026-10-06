@@ -5,14 +5,14 @@ declare(strict_types=1);
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Migration\DataMigration;
 use Marko\Database\Migration\Migration;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 
 /**
- * A mock connection that quotes identifiers with ANSI double quotes, as a real driver quotes them.
+ * A stub connection that quotes identifiers with ANSI double quotes, as a real driver quotes them.
  */
-function dataMigrationTestConnection(): ConnectionInterface&MockObject
+function dataMigrationTestConnection(): ConnectionInterface&Stub
 {
-    $connection = test()->createMock(ConnectionInterface::class);
+    $connection = test()->createStub(ConnectionInterface::class);
     $connection->method('quoteIdentifier')->willReturnCallback(
         fn (string $identifier): string => '"' . str_replace('"', '""', $identifier) . '"',
     );

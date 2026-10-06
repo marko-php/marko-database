@@ -28,7 +28,7 @@ describe('DataMigrator Integration', function (): void {
     it('tracks data migrations in same migrations table', function (): void {
         $recordedMigrations = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')->willReturn(1);
         $connection->method('query')
             ->willReturnCallback(function (string $sql) use (&$recordedMigrations): array {
@@ -86,7 +86,7 @@ describe('DataMigrator Integration', function (): void {
         $executionOrder = [];
         $batchNumbers = [];
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')
             ->willReturnCallback(function (string $sql) use (&$executionOrder): int {
                 if (str_contains($sql, 'CREATE TABLE')) {
@@ -99,7 +99,7 @@ describe('DataMigrator Integration', function (): void {
             });
         $connection->method('query')->willReturn([]);
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('getApplied')->willReturn([]);
         $repository->method('getNextBatchNumber')->willReturn(1);
         $repository->method('record')
@@ -164,7 +164,7 @@ describe('DataMigrator Integration', function (): void {
     });
 
     it('skips already applied data migrations', function (): void {
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
 
         $repository = $this->createMock(MigrationRepository::class);
         $repository->method('getApplied')->willReturn(['001_already_applied']);
@@ -200,7 +200,7 @@ describe('DataMigrator Integration', function (): void {
         $deletedMigrations = [];
         $downCalled = false;
 
-        $connection = $this->createMock(ConnectionInterface::class);
+        $connection = $this->createStub(ConnectionInterface::class);
         $connection->method('execute')
             ->willReturnCallback(function () use (&$downCalled): int {
                 $downCalled = true;
@@ -208,7 +208,7 @@ describe('DataMigrator Integration', function (): void {
                 return 1;
             });
 
-        $repository = $this->createMock(MigrationRepository::class);
+        $repository = $this->createStub(MigrationRepository::class);
         $repository->method('getLastBatchMigrations')->willReturn(['001_insert_data']);
         $repository->method('delete')
             ->willReturnCallback(function (

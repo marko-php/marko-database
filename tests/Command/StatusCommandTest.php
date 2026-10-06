@@ -11,7 +11,7 @@ use Marko\Database\Migration\DataMigrator;
 use Marko\Database\Migration\MigrationRepository;
 use Marko\Database\Migration\Migrator;
 use Marko\Database\Tests\Command\Helpers;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 
 /**
  * Get the standard migration file content for testing.
@@ -110,14 +110,14 @@ function createStatusDataMigratorStub(
  *
  * @param array<string> $migrationFiles Files that exist on disk
  * @param array<array{name: string, batch: int}> $appliedWithBatch Migrations marked as applied with batch
- * @param MigrationRepository&MockObject $repository The mock repository
+ * @param MigrationRepository&Stub $repository The stub repository
  * @param array<array{name: string, path: string, source: string}> $dataPending Pending data migrations
  * @param array<string> $dataApplied Applied data migrations
  */
 function setupStatusTest(
     array $migrationFiles,
     array $appliedWithBatch,
-    MigrationRepository&MockObject $repository,
+    MigrationRepository&Stub $repository,
     array $dataPending = [],
     array $dataApplied = [],
 ): StatusTestContext {
@@ -177,7 +177,7 @@ it('shows list of applied migrations with batch number', function (): void {
             ['name' => '2024_01_01_000000_create_users_table', 'batch' => 1],
             ['name' => '2024_01_02_000000_create_posts_table', 'batch' => 2],
         ],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
     );
 
     ['output' => $output] = $ctx->execute();
@@ -200,7 +200,7 @@ it('shows list of pending migrations', function (): void {
         appliedWithBatch: [
             ['name' => '2024_01_01_000000_create_users_table', 'batch' => 1],
         ],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
     );
 
     ['output' => $output] = $ctx->execute();
@@ -223,7 +223,7 @@ it('shows total count of applied migrations', function (): void {
             ['name' => '2024_01_01_000000_create_users_table', 'batch' => 1],
             ['name' => '2024_01_02_000000_create_posts_table', 'batch' => 2],
         ],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
     );
 
     ['output' => $output] = $ctx->execute();
@@ -243,7 +243,7 @@ it('shows total count of pending migrations', function (): void {
         appliedWithBatch: [
             ['name' => '2024_01_01_000000_create_users_table', 'batch' => 1],
         ],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
     );
 
     ['output' => $output] = $ctx->execute();
@@ -257,7 +257,7 @@ it('shows "No migrations found" when migrations directory empty', function (): v
     $ctx = setupStatusTest(
         migrationFiles: [],
         appliedWithBatch: [],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
     );
 
     ['output' => $output] = $ctx->execute();
@@ -277,7 +277,7 @@ it('shows "All migrations applied" when no pending migrations', function (): voi
             ['name' => '2024_01_01_000000_create_users_table', 'batch' => 1],
             ['name' => '2024_01_02_000000_create_posts_table', 'batch' => 2],
         ],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
     );
 
     ['output' => $output] = $ctx->execute();
@@ -291,7 +291,7 @@ it('returns 0 exit code on success', function (): void {
     $ctx = setupStatusTest(
         migrationFiles: [],
         appliedWithBatch: [],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
     );
 
     ['exitCode' => $exitCode] = $ctx->execute();
@@ -305,7 +305,7 @@ it('shows data migration status', function (): void {
     $ctx = setupStatusTest(
         migrationFiles: [],
         appliedWithBatch: [],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
         dataPending: [
             ['name' => '001_seed_countries', 'path' => '/app/Data/001_seed_countries.php', 'source' => 'app/core'],
         ],
@@ -331,7 +331,7 @@ it('shows both schema and data migration summary', function (): void {
         appliedWithBatch: [
             ['name' => '2024_01_01_000000_create_users_table', 'batch' => 1],
         ],
-        repository: $this->createMock(MigrationRepository::class),
+        repository: $this->createStub(MigrationRepository::class),
         dataApplied: ['001_seed_countries'],
     );
 
