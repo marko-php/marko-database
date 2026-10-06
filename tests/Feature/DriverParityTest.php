@@ -6,6 +6,7 @@ namespace Marko\Database\Tests\Feature;
 
 use Marko\Database\Diff\SchemaDiff;
 use Marko\Database\Diff\SqlGeneratorInterface;
+use Marko\Database\Diff\TableDiff;
 use Marko\Database\MySql\Sql\MySqlGenerator;
 use Marko\Database\PgSql\Sql\PgSqlGenerator;
 use Marko\Database\Schema\Column;
@@ -218,4 +219,58 @@ describe('Driver Parity', function (): void {
             ->toBe([])
             ->and($pgsqlDown)->toBe([]);
     });
+
+    describe('column modifications', function (): void {
+        it('keeps an undeclared length on both drivers', function (): void {
+            $diff = parityModifyDiff(
+                new Column(name: 'title', type: 'varchar', nullable: true),
+                new Column(name: 'title', type: 'varchar', length: 500),
+            );
+
+            expect($this->mysqlGenerator->generateUp($diff))
+                ->toBe(['ALTER TABLE `posts` MODIFY COLUMN `title` VARCHAR(500) NULL'])
+                ->and($this->pgsqlGenerator->generateUp($diff))
+                ->toBe(['ALTER TABLE "posts" ALTER COLUMN "title" DROP NOT NULL']);
+        });
+
+        it('keeps an undeclared default on both drivers', function (): void {
+            $diff = parityModifyDiff(
+                new Column(name: 'status', type: 'varchar', length: 20, nullable: true),
+                new Column(name: 'status', type: 'varchar', length: 20, default: 'draft'),
+            );
+
+            expect($this->mysqlGenerator->generateUp($diff))
+                ->toBe(["ALTER TABLE `posts` MODIFY COLUMN `status` VARCHAR(20) NULL DEFAULT 'draft'"])
+                ->and($this->pgsqlGenerator->generateUp($diff))
+                ->toBe(['ALTER TABLE "posts" ALTER COLUMN "status" DROP NOT NULL']);
+        });
+
+        it('emits nothing on either driver when only an accepted difference remains', function (): void {
+            $diff = parityModifyDiff(
+                new Column(name: 'email', type: 'varchar', unique: true),
+                new Column(name: 'email', type: 'varchar', length: 500, default: 'none'),
+            );
+
+            expect($this->mysqlGenerator->generateUp($diff))->toBeEmpty()
+                ->and($this->pgsqlGenerator->generateUp($diff))->toBeEmpty()
+                ->and($this->mysqlGenerator->generateDown($diff))->toBeEmpty()
+                ->and($this->pgsqlGenerator->generateDown($diff))->toBeEmpty();
+        });
+    });
 });
+
+/**
+ * A schema diff that modifies one column of the posts table.
+ */
+function parityModifyDiff(
+    Column $column,
+    Column $previous,
+): SchemaDiff {
+    return new SchemaDiff(tablesToAlter: [
+        'posts' => new TableDiff(
+            tableName: 'posts',
+            columnsToModify: [$column->name => $column],
+            columnsToModifyFrom: [$column->name => $previous],
+        ),
+    ]);
+}

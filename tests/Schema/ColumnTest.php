@@ -177,4 +177,112 @@ describe('Column', function (): void {
         // TEXT type ignores length differences
         expect($text1->equals($text2))->toBeTrue();
     });
+
+    it('defaults nativeType, collation and onUpdateExpression to null', function (): void {
+        $column = new Column(name: 'title', type: 'varchar');
+
+        expect($column->nativeType)->toBeNull()
+            ->and($column->collation)->toBeNull()
+            ->and($column->onUpdateExpression)->toBeNull();
+    });
+
+    it('ignores native metadata when comparing columns', function (): void {
+        $entity = new Column(name: 'price', type: 'decimal');
+        $database = new Column(
+            name: 'price',
+            type: 'decimal',
+            nativeType: 'decimal(12,4) unsigned',
+            collation: 'utf8mb4_bin',
+            onUpdateExpression: 'CURRENT_TIMESTAMP',
+        );
+
+        expect($entity->equals($database))->toBeTrue()
+            ->and($database->equals($entity))->toBeTrue();
+    });
+
+    it('keeps native metadata through the with methods', function (): void {
+        $column = new Column(
+            name: 'updated_at',
+            type: 'timestamp',
+            nativeType: 'timestamp(3)',
+            collation: 'utf8mb4_bin',
+            onUpdateExpression: 'CURRENT_TIMESTAMP(3)',
+        );
+
+        $derived = [
+            $column->withPrimaryKey(),
+            $column->withAutoIncrement(),
+            $column->withNullable(),
+            $column->withUnique(),
+            $column->withDefault('CURRENT_TIMESTAMP(3)'),
+            $column->withReference('users.id'),
+        ];
+
+        foreach ($derived as $copy) {
+            expect($copy->nativeType)->toBe('timestamp(3)')
+                ->and($copy->collation)->toBe('utf8mb4_bin')
+                ->and($copy->onUpdateExpression)->toBe('CURRENT_TIMESTAMP(3)');
+        }
+    });
+
+    describe('resolveAgainst', function (): void {
+        it('keeps the previous length and default when the column declares none', function (): void {
+            $entity = new Column(name: 'title', type: 'varchar', nullable: true);
+            $previous = new Column(name: 'title', type: 'VARCHAR', length: 500, default: 'untitled');
+
+            $target = $entity->resolveAgainst($previous);
+
+            expect($target->length)->toBe(500)
+                ->and($target->default)->toBe('untitled')
+                ->and($target->nullable)->toBeTrue()
+                ->and($target->type)->toBe('varchar');
+        });
+
+        it('keeps the declared length and default over the previous ones', function (): void {
+            $entity = new Column(name: 'title', type: 'varchar', length: 100, default: 'draft');
+            $previous = new Column(name: 'title', type: 'VARCHAR', length: 500, default: 'untitled');
+
+            $target = $entity->resolveAgainst($previous);
+
+            expect($target->length)->toBe(100)
+                ->and($target->default)->toBe('draft');
+        });
+
+        it('keeps the previous nullability for an auto-increment primary key', function (): void {
+            $entity = new Column(
+                name: 'id',
+                type: 'integer',
+                nullable: true,
+                primaryKey: true,
+                autoIncrement: true,
+            );
+            $previous = new Column(name: 'id', type: 'INT', primaryKey: true, autoIncrement: true);
+
+            expect($entity->resolveAgainst($previous)->nullable)->toBeFalse();
+        });
+
+        it('carries the previous native type, collation and on-update expression', function (): void {
+            $entity = new Column(name: 'updated_at', type: 'timestamp', nullable: true);
+            $previous = new Column(
+                name: 'updated_at',
+                type: 'TIMESTAMP',
+                nativeType: 'timestamp(3)',
+                collation: 'utf8mb4_bin',
+                onUpdateExpression: 'CURRENT_TIMESTAMP(3)',
+            );
+
+            $target = $entity->resolveAgainst($previous);
+
+            expect($target->nativeType)->toBe('timestamp(3)')
+                ->and($target->collation)->toBe('utf8mb4_bin')
+                ->and($target->onUpdateExpression)->toBe('CURRENT_TIMESTAMP(3)');
+        });
+
+        it('resolves to a column the diff considers equal to the entity column', function (): void {
+            $entity = new Column(name: 'title', type: 'varchar', nullable: true);
+            $previous = new Column(name: 'title', type: 'VARCHAR', length: 500, default: 'untitled');
+
+            expect($entity->equals($entity->resolveAgainst($previous)))->toBeTrue();
+        });
+    });
 });

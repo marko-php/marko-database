@@ -6,6 +6,15 @@ namespace Marko\Database\Schema;
 
 readonly class Column
 {
+    /**
+     * @param string|null $nativeType The driver-native type the database reported, such as
+     *                                `decimal(12,4) unsigned`. Set by introspection, ignored by equals().
+     * @param string|null $collation The collation the database reported, such as `utf8mb4_bin`. Set by
+     *                               introspection, ignored by equals().
+     * @param string|null $onUpdateExpression The expression the database writes on every row update, such as
+     *                                        `CURRENT_TIMESTAMP`. Set by introspection, ignored by equals().
+     *                                        Not the foreign key action, which is $onUpdate.
+     */
     public function __construct(
         public string $name,
         public string $type,
@@ -18,92 +27,35 @@ readonly class Column
         public ?string $references = null,
         public ?string $onDelete = null,
         public ?string $onUpdate = null,
+        public ?string $nativeType = null,
+        public ?string $collation = null,
+        public ?string $onUpdateExpression = null,
     ) {}
 
     public function withPrimaryKey(): self
     {
-        return new self(
-            name: $this->name,
-            type: $this->type,
-            length: $this->length,
-            nullable: $this->nullable,
-            default: $this->default,
-            unique: $this->unique,
-            primaryKey: true,
-            autoIncrement: $this->autoIncrement,
-            references: $this->references,
-            onDelete: $this->onDelete,
-            onUpdate: $this->onUpdate,
-        );
+        return clone($this, ['primaryKey' => true]);
     }
 
     public function withAutoIncrement(): self
     {
-        return new self(
-            name: $this->name,
-            type: $this->type,
-            length: $this->length,
-            nullable: $this->nullable,
-            default: $this->default,
-            unique: $this->unique,
-            primaryKey: $this->primaryKey,
-            autoIncrement: true,
-            references: $this->references,
-            onDelete: $this->onDelete,
-            onUpdate: $this->onUpdate,
-        );
+        return clone($this, ['autoIncrement' => true]);
     }
 
     public function withNullable(): self
     {
-        return new self(
-            name: $this->name,
-            type: $this->type,
-            length: $this->length,
-            nullable: true,
-            default: $this->default,
-            unique: $this->unique,
-            primaryKey: $this->primaryKey,
-            autoIncrement: $this->autoIncrement,
-            references: $this->references,
-            onDelete: $this->onDelete,
-            onUpdate: $this->onUpdate,
-        );
+        return clone($this, ['nullable' => true]);
     }
 
     public function withUnique(): self
     {
-        return new self(
-            name: $this->name,
-            type: $this->type,
-            length: $this->length,
-            nullable: $this->nullable,
-            default: $this->default,
-            unique: true,
-            primaryKey: $this->primaryKey,
-            autoIncrement: $this->autoIncrement,
-            references: $this->references,
-            onDelete: $this->onDelete,
-            onUpdate: $this->onUpdate,
-        );
+        return clone($this, ['unique' => true]);
     }
 
     public function withDefault(
         mixed $default,
     ): self {
-        return new self(
-            name: $this->name,
-            type: $this->type,
-            length: $this->length,
-            nullable: $this->nullable,
-            default: $default,
-            unique: $this->unique,
-            primaryKey: $this->primaryKey,
-            autoIncrement: $this->autoIncrement,
-            references: $this->references,
-            onDelete: $this->onDelete,
-            onUpdate: $this->onUpdate,
-        );
+        return clone($this, ['default' => $default]);
     }
 
     public function withReference(
@@ -111,19 +63,35 @@ readonly class Column
         ?string $onDelete = null,
         ?string $onUpdate = null,
     ): self {
-        return new self(
-            name: $this->name,
-            type: $this->type,
-            length: $this->length,
-            nullable: $this->nullable,
-            default: $this->default,
-            unique: $this->unique,
-            primaryKey: $this->primaryKey,
-            autoIncrement: $this->autoIncrement,
-            references: $references,
-            onDelete: $onDelete,
-            onUpdate: $onUpdate,
-        );
+        return clone($this, [
+            'references' => $references,
+            'onDelete' => $onDelete,
+            'onUpdate' => $onUpdate,
+        ]);
+    }
+
+    /**
+     * The column an up migration actually moves to when this (entity) column replaces $previous, the
+     * database's current definition.
+     *
+     * It applies the tolerances equals() applies, so the generated SQL never changes what the diff
+     * accepted: a column that declares no length or no default keeps the database's, and an
+     * auto-increment primary key keeps the database's nullability whatever the PHP property allows.
+     * The driver-native metadata an entity cannot declare (native type, collation, on-update
+     * expression) is carried over from $previous; each SQL generator decides whether it still applies
+     * to the resolved type.
+     */
+    public function resolveAgainst(
+        self $previous,
+    ): self {
+        return clone($this, [
+            'length' => $this->length ?? $previous->length,
+            'nullable' => $this->primaryKey && $this->autoIncrement ? $previous->nullable : $this->nullable,
+            'default' => $this->default ?? $previous->default,
+            'nativeType' => $this->nativeType ?? $previous->nativeType,
+            'collation' => $this->collation ?? $previous->collation,
+            'onUpdateExpression' => $this->onUpdateExpression ?? $previous->onUpdateExpression,
+        ]);
     }
 
     /**
@@ -131,7 +99,9 @@ readonly class Column
      *
      * Note: This intentionally excludes references, onDelete, and onUpdate
      * because foreign key relationships are handled separately via ForeignKey
-     * objects in the Table's foreignKeys array.
+     * objects in the Table's foreignKeys array. The driver-native metadata
+     * (nativeType, collation, onUpdateExpression) is excluded too: an entity
+     * cannot declare it, so it never makes a column differ.
      */
     public function equals(
         self $other,
