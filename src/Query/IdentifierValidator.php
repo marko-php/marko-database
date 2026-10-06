@@ -154,10 +154,18 @@ class IdentifierValidator
      * place. Bindings for ? placeholders are passed separately and are not
      * subject to this check.
      *
+     * This is a tripwire for obvious mistakes, not a sanitizer: it cannot see
+     * quotes, so a user value concatenated into the expression can still change
+     * its meaning. Pass every value as a ? binding.
+     *
+     * MySQL also starts a comment at `#`; its builder passes $hashStartsComment.
+     * PostgreSQL does not (`#`, `#>` and `#>>` are operators there), so it may not.
+     *
      * @throws InvalidColumnException When the expression contains a dangerous pattern
      */
     public static function assertNoDangerousPatterns(
         string $expression,
+        bool $hashStartsComment = false,
     ): void {
         if (
             str_contains($expression, ';')
@@ -165,6 +173,7 @@ class IdentifierValidator
             || str_contains($expression, '/*')
             || str_contains($expression, '*/')
             || str_contains($expression, '`')
+            || ($hashStartsComment && str_contains($expression, '#'))
         ) {
             throw InvalidColumnException::invalidColumn($expression);
         }
