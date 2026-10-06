@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Marko\Database\Tests\Command;
 
+use Marko\Core\Command\ConfirmationPrompterInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
+use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
+use Marko\Database\Command\DestructiveCommandGuard;
 use Marko\Database\Command\DiffCommand;
 use Marko\Database\Connection\ConnectionInterface;
 use Marko\Database\Connection\StatementInterface;
@@ -18,6 +21,7 @@ use Marko\Database\Introspection\IntrospectorInterface;
 use Marko\Database\Migration\Migrator;
 use Marko\Database\Schema\SchemaRegistry;
 use Marko\Database\Schema\Table;
+use Marko\Testing\Fake\FakeConfirmationPrompter;
 
 /**
  * Command test helpers.
@@ -259,6 +263,19 @@ final class Helpers
         $result = self::getOutputContent($stream);
 
         return ['output' => $result, 'exitCode' => $exitCode];
+    }
+
+    /**
+     * Create a DestructiveCommandGuard for an environment name (null leaves the environment unset).
+     */
+    public static function createDestructiveCommandGuard(
+        ?string $environment,
+        ?ConfirmationPrompterInterface $confirmationPrompter = null,
+    ): DestructiveCommandGuard {
+        return new DestructiveCommandGuard(
+            appEnvironment: new AppEnvironment($environment === null ? [] : ['APP_ENV' => $environment]),
+            confirmationPrompter: $confirmationPrompter ?? new FakeConfirmationPrompter(interactive: false),
+        );
     }
 
     /**

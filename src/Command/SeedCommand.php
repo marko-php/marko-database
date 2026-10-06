@@ -8,7 +8,6 @@ use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
-use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
 use Marko\Database\Exceptions\SeederException;
 use Marko\Database\Seed\SeederDefinition;
@@ -16,26 +15,29 @@ use Marko\Database\Seed\SeederDiscoveryInterface;
 use Marko\Database\Seed\SeederRunner;
 
 /** @noinspection PhpUnused */
-#[Command(name: 'db:seed', description: 'Run database seeders')]
+#[Command(name: 'db:seed', description: 'Run database seeders', flags: ['force'])]
 readonly class SeedCommand implements CommandInterface
 {
     public function __construct(
         private SeederDiscoveryInterface $discovery,
         private SeederRunner $runner,
         private ProjectPaths $paths,
-        private AppEnvironment $appEnvironment,
+        private DestructiveCommandGuard $destructiveCommandGuard,
     ) {}
 
     public function execute(
         Input $input,
         Output $output,
     ): int {
-        // Block in production - no --force flag support
-        if ($this->appEnvironment->isProduction()) {
-            $output->writeLine('Error: Seeders cannot be run in production environment.');
-            $output->writeLine('Seeders are meant for development and testing only.');
+        $refusal = $this->destructiveCommandGuard->check(
+            'db:seed',
+            'writes seed data to the database',
+            $input,
+            $output,
+        );
 
-            return 1;
+        if ($refusal !== null) {
+            return $refusal;
         }
 
         // Discover all seeders
@@ -57,11 +59,14 @@ readonly class SeedCommand implements CommandInterface
         // Check for --class option
         $specificClass = $this->parseClassOption($input);
 
+        // The guard has already approved the environment; --force carries through to the runner's own check
+        $force = $input->hasOption('force');
+
         if ($specificClass !== null) {
-            return $this->runSpecificSeeder($specificClass, $definitions, $output);
+            return $this->runSpecificSeeder($specificClass, $definitions, $force, $output);
         }
 
-        return $this->runAllSeeders($definitions, $output);
+        return $this->runAllSeeders($definitions, $force, $output);
     }
 
     /**
@@ -81,11 +86,12 @@ readonly class SeedCommand implements CommandInterface
     private function runSpecificSeeder(
         string $name,
         array $definitions,
+        bool $force,
         Output $output,
     ): int {
         try {
             $output->writeLine("Running seeder: $name");
-            $this->runner->runByName($name, $definitions);
+            $this->runner->runByName($name, $definitions, $force);
             $output->writeLine('Seeder completed successfully.');
 
             return 0;
@@ -103,6 +109,7 @@ readonly class SeedCommand implements CommandInterface
      */
     private function runAllSeeders(
         array $definitions,
+        bool $force,
         Output $output,
     ): int {
         try {
@@ -110,7 +117,7 @@ readonly class SeedCommand implements CommandInterface
                 $output->writeLine("Running seeder: $definition->name");
             }
 
-            $this->runner->runAll($definitions);
+            $this->runner->runAll($definitions, $force);
             $output->writeLine('All seeders completed successfully.');
 
             return 0;

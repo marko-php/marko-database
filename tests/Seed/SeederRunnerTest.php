@@ -343,3 +343,81 @@ describe('SeederRunner', function (): void {
         expect($transactionRolledBack)->toBeTrue();
     });
 });
+
+/**
+ * @return array{runner: SeederRunner, definitions: list<SeederDefinition>, ran: object{count: int}}
+ */
+function createPolicyRunner(
+    string $environment,
+): array {
+    $ran = new class ()
+    {
+        public int $count = 0;
+    };
+    $seeder = new readonly class ($ran) implements SeederInterface
+    {
+        public function __construct(
+            private object $ran,
+        ) {}
+
+        public function run(): void
+        {
+            $this->ran->count++;
+        }
+    };
+
+    return [
+        'runner' => new SeederRunner(
+            seeders: [get_class($seeder) => $seeder],
+            appEnvironment: new AppEnvironment(['APP_ENV' => $environment]),
+        ),
+        'definitions' => [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 0)],
+        'ran' => $ran,
+    ];
+}
+
+describe('SeederRunner environment policy', function (): void {
+    it('runs seeders in development and testing without force', function (string $environment): void {
+        ['runner' => $runner, 'definitions' => $definitions, 'ran' => $ran] = createPolicyRunner($environment);
+
+        $runner->runAll($definitions);
+        $runner->runByName('users', $definitions);
+
+        expect($ran->count)->toBe(2);
+    })->with(['local', 'development', 'testing', 'test']);
+
+    it('throws requiresForce naming the environment in staging without force', function (string $environment): void {
+        ['runner' => $runner, 'definitions' => $definitions, 'ran' => $ran] = createPolicyRunner($environment);
+
+        expect(fn () => $runner->runAll($definitions))
+            ->toThrow(SeederException::class, "Seeders are refused in the '$environment' environment without force")
+            ->and($ran->count)->toBe(0);
+    })->with(['staging', 'qa']);
+
+    it('runs seeders in staging with force', function (): void {
+        ['runner' => $runner, 'definitions' => $definitions, 'ran' => $ran] = createPolicyRunner('staging');
+
+        $runner->runAll($definitions, force: true);
+        $runner->runByName('users', $definitions, force: true);
+
+        expect($ran->count)->toBe(2);
+    });
+
+    it('throws blockedInProduction in production even with force', function (): void {
+        ['runner' => $runner, 'definitions' => $definitions, 'ran' => $ran] = createPolicyRunner('production');
+
+        expect(fn () => $runner->runAll($definitions, force: true))
+            ->toThrow(SeederException::class, 'cannot be run in production')
+            ->and(fn () => $runner->runByName('users', $definitions, force: true))
+            ->toThrow(SeederException::class, 'cannot be run in production')
+            ->and($ran->count)->toBe(0);
+    });
+
+    it('applies the same policy to runByName', function (): void {
+        ['runner' => $runner, 'definitions' => $definitions, 'ran' => $ran] = createPolicyRunner('staging');
+
+        expect(fn () => $runner->runByName('users', $definitions))
+            ->toThrow(SeederException::class, "Seeders are refused in the 'staging' environment without force")
+            ->and($ran->count)->toBe(0);
+    });
+});

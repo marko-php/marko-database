@@ -8,29 +8,26 @@ use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
-use Marko\Core\Environment\AppEnvironment;
 use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
 
 /** @noinspection PhpUnused */
-#[Command(name: 'db:rollback', description: 'Rollback the last batch of migrations')]
+#[Command(name: 'db:rollback', description: 'Rollback the last batch of migrations', flags: ['force'])]
 readonly class RollbackCommand implements CommandInterface
 {
     public function __construct(
         private Migrator $migrator,
-        private AppEnvironment $appEnvironment,
+        private DestructiveCommandGuard $destructiveCommandGuard,
     ) {}
 
     public function execute(
         Input $input,
         Output $output,
     ): int {
-        // Block in production - no --force flag support
-        if ($this->appEnvironment->isProduction()) {
-            $output->writeLine('Error: Rollback cannot be run in production environment.');
-            $output->writeLine('Rollback is never allowed in production, even with --force.');
+        $refusal = $this->destructiveCommandGuard->check('db:rollback', 'rolls back migrations', $input, $output);
 
-            return 1;
+        if ($refusal !== null) {
+            return $refusal;
         }
 
         // Parse --step option

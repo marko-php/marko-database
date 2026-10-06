@@ -2,36 +2,91 @@
 
 declare(strict_types=1);
 
+use Marko\Core\Attributes\Command;
+use Marko\Core\Command\ConfirmationPrompterInterface;
 use Marko\Core\Command\Input;
-use Marko\Core\Environment\AppEnvironment;
 use Marko\Database\Command\ResetCommand;
+use Marko\Database\Migration\Migrator;
 use Marko\Database\Tests\Command\Helpers;
+use Marko\Testing\Fake\FakeConfirmationPrompter;
 
-it('refuses to reset and exits 1 in production', function (): void {
-    $migrator = Helpers::createResettingMigrator();
+/**
+ * @param array<string> $arguments
+ * @return array{exitCode: int, output: string}
+ */
+function executeResetCommand(
+    Migrator $migrator,
+    ?string $environment,
+    array $arguments = ['marko', 'db:reset'],
+    ?ConfirmationPrompterInterface $prompter = null,
+): array {
     $command = new ResetCommand(
         migrator: $migrator,
-        appEnvironment: new AppEnvironment(['APP_ENV' => 'production']),
+        destructiveCommandGuard: Helpers::createDestructiveCommandGuard($environment, $prompter),
     );
     ['stream' => $stream, 'output' => $output] = Helpers::createOutputStream();
 
-    $exitCode = $command->execute(new Input(['marko', 'db:reset']), $output);
+    $exitCode = $command->execute(new Input($arguments), $output);
 
-    expect($exitCode)->toBe(1)
-        ->and(Helpers::getOutputContent($stream))->toContain('Reset cannot be run in production')
-        ->and($migrator->resetCalled)->toBeFalse();
+    return ['exitCode' => $exitCode, 'output' => Helpers::getOutputContent($stream)];
+}
+
+it('declares force as a value-less flag', function (): void {
+    $attribute = new ReflectionClass(ResetCommand::class)->getAttributes(Command::class)[0]->newInstance();
+
+    expect($attribute->flags)->toBe(['force']);
 });
 
-it('resets the database in development', function (): void {
+it('refuses production even with --force', function (?string $environment): void {
     $migrator = Helpers::createResettingMigrator();
-    $command = new ResetCommand(
-        migrator: $migrator,
-        appEnvironment: new AppEnvironment(['APP_ENV' => 'development']),
-    );
-    ['output' => $output] = Helpers::createOutputStream();
 
-    $exitCode = $command->execute(new Input(['marko', 'db:reset']), $output);
+    $result = executeResetCommand($migrator, $environment, ['marko', 'db:reset', '--force']);
 
-    expect($exitCode)->toBe(0)
+    expect($result['exitCode'])->toBe(1)
+        ->and($result['output'])->toContain("db:reset cannot be run in the 'production' environment")
+        ->and($migrator->resetCalled)->toBeFalse();
+})->with(['production', null]);
+
+it('runs in development and testing', function (string $environment): void {
+    $migrator = Helpers::createResettingMigrator();
+
+    $result = executeResetCommand($migrator, $environment);
+
+    expect($result['exitCode'])->toBe(0)
+        ->and($migrator->resetCalled)->toBeTrue();
+})->with(['development', 'test']);
+
+it(
+    'refuses staging and an unknown environment without --force, naming the environment and the flag',
+    function (string $environment): void {
+        $migrator = Helpers::createResettingMigrator();
+
+        $result = executeResetCommand($migrator, $environment);
+
+        expect($result['exitCode'])->toBe(1)
+            ->and($result['output'])->toContain(
+                "db:reset is refused in the '$environment' environment without --force",
+            )
+            ->and($migrator->resetCalled)->toBeFalse();
+    },
+)->with(['staging', 'live']);
+
+it('runs in staging with --force when nobody can answer', function (): void {
+    $migrator = Helpers::createResettingMigrator();
+
+    $result = executeResetCommand($migrator, 'staging', ['marko', 'db:reset', '--force']);
+
+    expect($result['exitCode'])->toBe(0)
         ->and($migrator->resetCalled)->toBeTrue();
 });
+
+it('asks for confirmation with --force when interactive', function (bool $answer): void {
+    $migrator = Helpers::createResettingMigrator();
+    $prompter = new FakeConfirmationPrompter(answers: [$answer]);
+
+    $result = executeResetCommand($migrator, 'staging', ['marko', 'db:reset', '--force'], $prompter);
+
+    $prompter->assertAsked("db:reset rolls back every migration in the 'staging' environment. Continue?");
+    expect($result['exitCode'])->toBe(0)
+        ->and($migrator->resetCalled)->toBe($answer);
+})->with([true, false]);

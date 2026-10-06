@@ -8,29 +8,26 @@ use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Command\Output;
-use Marko\Core\Environment\AppEnvironment;
 use Marko\Database\Exceptions\MigrationException;
 use Marko\Database\Migration\Migrator;
 
 /** @noinspection PhpUnused */
-#[Command(name: 'db:reset', description: 'Rollback all database migrations')]
+#[Command(name: 'db:reset', description: 'Rollback all database migrations', flags: ['force'])]
 readonly class ResetCommand implements CommandInterface
 {
     public function __construct(
         private Migrator $migrator,
-        private AppEnvironment $appEnvironment,
+        private DestructiveCommandGuard $destructiveCommandGuard,
     ) {}
 
     public function execute(
         Input $input,
         Output $output,
     ): int {
-        // Block in production - no --force flag support
-        if ($this->appEnvironment->isProduction()) {
-            $output->writeLine('Error: Reset cannot be run in production environment.');
-            $output->writeLine('This command rolls back all migrations and is never allowed in production.');
+        $refusal = $this->destructiveCommandGuard->check('db:reset', 'rolls back every migration', $input, $output);
 
-            return 1;
+        if ($refusal !== null) {
+            return $refusal;
         }
 
         try {

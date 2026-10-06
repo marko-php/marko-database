@@ -16,7 +16,18 @@ class SeederException extends MarkoException
         return new self(
             message: 'Seeders cannot be run in production environment',
             context: 'Attempting to run seeders',
-            suggestion: 'Seeders are meant for development and testing only. Set MARKO_ENV or APP_ENV to development/local to run seeders.',
+            suggestion: 'Seeders are never run in production, even with --force. Set MARKO_ENV or APP_ENV to a development or testing name to run seeders.',
+        );
+    }
+
+    public static function requiresForce(
+        string $environment,
+    ): self {
+        return new self(
+            message: "Seeders are refused in the '$environment' environment without force",
+            context: 'Attempting to run seeders',
+            suggestion: 'Seeders run freely only in development (development, dev, local) and testing (testing, test). '
+                . 'Pass --force to db:seed, or force: true to SeederRunner, if this database may be seeded.',
         );
     }
 

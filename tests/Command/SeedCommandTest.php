@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 use Marko\Core\Attributes\Command;
 use Marko\Core\Command\CommandInterface;
+use Marko\Core\Command\ConfirmationPrompterInterface;
 use Marko\Core\Command\Input;
 use Marko\Core\Environment\AppEnvironment;
 use Marko\Core\Path\ProjectPaths;
+use Marko\Database\Command\DestructiveCommandGuard;
 use Marko\Database\Command\SeedCommand;
 use Marko\Database\Seed\SeederDefinition;
 use Marko\Database\Seed\SeederDiscoveryInterface;
 use Marko\Database\Seed\SeederInterface;
 use Marko\Database\Seed\SeederRunner;
 use Marko\Database\Tests\Command\Helpers;
+use Marko\Testing\Fake\FakeConfirmationPrompter;
 
 /**
  * Helper to create a stub SeederDiscovery.
@@ -75,9 +78,11 @@ function createSeedCommand(
     array $definitions = [],
     array $seeders = [],
     ?string $appEnv = 'local',
+    ?ConfirmationPrompterInterface $prompter = null,
+    ?SeederDiscoveryInterface $discovery = null,
 ): SeedCommand {
     $appEnvironment = new AppEnvironment($appEnv === null ? [] : ['APP_ENV' => $appEnv]);
-    $discovery = createStubDiscovery(vendorDefinitions: $definitions);
+    $discovery ??= createStubDiscovery(vendorDefinitions: $definitions);
 
     $runner = new SeederRunner(
         seeders: $seeders,
@@ -88,7 +93,10 @@ function createSeedCommand(
         discovery: $discovery,
         runner: $runner,
         paths: new ProjectPaths('/test'),
-        appEnvironment: $appEnvironment,
+        destructiveCommandGuard: new DestructiveCommandGuard(
+            appEnvironment: $appEnvironment,
+            confirmationPrompter: $prompter ?? new FakeConfirmationPrompter(interactive: false),
+        ),
     );
 }
 
@@ -303,7 +311,7 @@ it('refuses to seed and exits 1 when APP_ENV is unset', function (): void {
     ['output' => $output, 'exitCode' => $exitCode] = executeSeedCommand($command);
 
     expect($exitCode)->toBe(1)
-        ->and($output)->toContain('cannot be run in production');
+        ->and($output)->toContain("db:seed cannot be run in the 'production' environment");
 });
 
 it('shows error message when blocked in production', function (): void {
@@ -321,10 +329,10 @@ it('shows error message when blocked in production', function (): void {
 
     ['output' => $output] = executeSeedCommand($command);
 
-    expect($output)->toContain('cannot be run in production');
+    expect($output)->toContain("db:seed cannot be run in the 'production' environment");
 });
 
-it('does NOT support --force flag (seeders never run in production)', function (): void {
+it('refuses production even with --force', function (): void {
     $seeder = createNoOpSeeder();
 
     $definitions = [
@@ -344,7 +352,7 @@ it('does NOT support --force flag (seeders never run in production)', function (
     );
 
     expect($exitCode)->toBe(1)
-        ->and($output)->toContain('cannot be run in production');
+        ->and($output)->toContain("db:seed cannot be run in the 'production' environment");
 });
 
 it('shows "No seeders found" when none discovered', function (): void {
@@ -370,4 +378,152 @@ it('returns 0 on success, 1 on failure', function (): void {
     ['exitCode' => $exitCode] = executeSeedCommand($command);
 
     expect($exitCode)->toBe(0);
+});
+
+/**
+ * A seeder that counts its runs in a shared counter object.
+ *
+ * @return array{seeder: SeederInterface, ran: object{count: int}}
+ */
+function createCountingSeeder(): array
+{
+    $ran = new class ()
+    {
+        public int $count = 0;
+    };
+
+    return [
+        'seeder' => new readonly class ($ran) implements SeederInterface
+        {
+            public function __construct(
+                private object $ran,
+            ) {}
+
+            public function run(): void
+            {
+                $this->ran->count++;
+            }
+        },
+        'ran' => $ran,
+    ];
+}
+
+it('declares force as a value-less flag', function (): void {
+    $attribute = new ReflectionClass(SeedCommand::class)->getAttributes(Command::class)[0]->newInstance();
+
+    expect($attribute->flags)->toBe(['force']);
+});
+
+it('seeds in development and testing', function (string $environment): void {
+    ['seeder' => $seeder, 'ran' => $ran] = createCountingSeeder();
+    $command = createSeedCommand(
+        definitions: [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 10)],
+        seeders: [get_class($seeder) => $seeder],
+        appEnv: $environment,
+    );
+
+    ['exitCode' => $exitCode] = executeSeedCommand($command);
+
+    expect($exitCode)->toBe(0)
+        ->and($ran->count)->toBe(1);
+})->with(['local', 'testing', 'test']);
+
+it(
+    'refuses staging and an unknown environment without --force, naming the environment and the flag',
+    function (string $environment): void {
+        ['seeder' => $seeder, 'ran' => $ran] = createCountingSeeder();
+        $command = createSeedCommand(
+            definitions: [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 10)],
+            seeders: [get_class($seeder) => $seeder],
+            appEnv: $environment,
+        );
+
+        ['output' => $output, 'exitCode' => $exitCode] = executeSeedCommand($command);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("db:seed is refused in the '$environment' environment without --force")
+            ->and($ran->count)->toBe(0);
+    },
+)->with(['staging', 'demo']);
+
+it('seeds in staging with --force when nobody can answer', function (): void {
+    ['seeder' => $seeder, 'ran' => $ran] = createCountingSeeder();
+    $command = createSeedCommand(
+        definitions: [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 10)],
+        seeders: [get_class($seeder) => $seeder],
+        appEnv: 'staging',
+    );
+
+    ['exitCode' => $exitCode] = executeSeedCommand($command, ['marko', 'db:seed', '--force']);
+
+    expect($exitCode)->toBe(0)
+        ->and($ran->count)->toBe(1);
+});
+
+it('forwards --force to the runner for a single --class seeder in staging', function (): void {
+    ['seeder' => $seeder, 'ran' => $ran] = createCountingSeeder();
+    $command = createSeedCommand(
+        definitions: [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 10)],
+        seeders: [get_class($seeder) => $seeder],
+        appEnv: 'staging',
+    );
+
+    ['exitCode' => $exitCode] = executeSeedCommand($command, ['marko', 'db:seed', '--force', '--class', 'users']);
+
+    expect($exitCode)->toBe(0)
+        ->and($ran->count)->toBe(1);
+});
+
+it('asks for confirmation with --force when interactive', function (bool $answer): void {
+    ['seeder' => $seeder, 'ran' => $ran] = createCountingSeeder();
+    $prompter = new FakeConfirmationPrompter(answers: [$answer]);
+    $command = createSeedCommand(
+        definitions: [new SeederDefinition(seederClass: get_class($seeder), name: 'users', order: 10)],
+        seeders: [get_class($seeder) => $seeder],
+        appEnv: 'staging',
+        prompter: $prompter,
+    );
+
+    ['exitCode' => $exitCode] = executeSeedCommand($command, ['marko', 'db:seed', '--force']);
+
+    $prompter->assertAsked("db:seed writes seed data to the database in the 'staging' environment. Continue?");
+    expect($exitCode)->toBe(0)
+        ->and($ran->count)->toBe($answer ? 1 : 0);
+})->with([true, false]);
+
+it('does not discover seeders when refused', function (): void {
+    $discovery = new class () implements SeederDiscoveryInterface
+    {
+        public int $calls = 0;
+
+        public function discoverInVendor(
+            string $vendorPath,
+        ): array {
+            $this->calls++;
+
+            return [];
+        }
+
+        public function discoverInModules(
+            string $modulesPath,
+        ): array {
+            $this->calls++;
+
+            return [];
+        }
+
+        public function discoverInApp(
+            string $appPath,
+        ): array {
+            $this->calls++;
+
+            return [];
+        }
+    };
+    $command = createSeedCommand(appEnv: 'staging', discovery: $discovery);
+
+    ['exitCode' => $exitCode] = executeSeedCommand($command);
+
+    expect($exitCode)->toBe(1)
+        ->and($discovery->calls)->toBe(0);
 });
